@@ -14,7 +14,6 @@ class WalletModel;
 class TransactionTableModel : public QAbstractTableModel
 {
     Q_OBJECT
-
 public:
     explicit TransactionTableModel(CWallet* wallet, WalletModel *parent = 0);
     ~TransactionTableModel();
@@ -24,7 +23,8 @@ public:
         Date = 1,
         Type = 2,
         ToAddress = 3,
-        Amount = 4
+        Amount = 4,
+        RefHeight = 5
     };
 
     /** Roles to get specific information from a transaction row.
@@ -48,7 +48,9 @@ public:
         /** Is transaction confirmed? */
         ConfirmedRole,
         /** Formatted amount, without brackets when unconfirmed */
-        FormattedAmountRole
+        FormattedAmountRole,
+        /** Reference height of transaction */
+        RefHeightRole
     };
 
     int rowCount(const QModelIndex &parent) const;
@@ -56,7 +58,6 @@ public:
     QVariant data(const QModelIndex &index, int role) const;
     QVariant headerData(int section, Qt::Orientation orientation, int role) const;
     QModelIndex index(int row, int column, const QModelIndex & parent = QModelIndex()) const;
-
 private:
     CWallet* wallet;
     WalletModel *walletModel;
@@ -71,6 +72,7 @@ private:
     QString formatTxType(const TransactionRecord *wtx) const;
     QString formatTxToAddress(const TransactionRecord *wtx, bool tooltip) const;
     QString formatTxAmount(const TransactionRecord *wtx, bool showUnconfirmed=true) const;
+    QString formatTxRefHeight(const TransactionRecord *wtx) const;
     QString formatTooltip(const TransactionRecord *rec) const;
     QVariant txStatusDecoration(const TransactionRecord *wtx) const;
     QVariant txAddressDecoration(const TransactionRecord *wtx) const;
@@ -83,4 +85,5 @@ public slots:
     friend class TransactionTablePriv;
 };
 
-#endif // TRANSACTIONTABLEMODEL_H
+#endif
+

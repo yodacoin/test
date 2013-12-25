@@ -10,10 +10,10 @@
 #include "walletmodel.h"
 #include "wallet.h"
 
-#include <QClipboard>
-
 #include <string>
 #include <vector>
+
+#include <QClipboard>
 
 SignVerifyMessageDialog::SignVerifyMessageDialog(QWidget *parent) :
     QDialog(parent),
@@ -24,11 +24,11 @@ SignVerifyMessageDialog::SignVerifyMessageDialog(QWidget *parent) :
 
 #if (QT_VERSION >= 0x040700)
     /* Do not move this to the XML file, Qt before 4.7 will choke on it */
-    ui->addressIn_SM->setPlaceholderText(tr("Enter a Litecoin address (e.g. Ler4HNAEfwYhBmGXcFP2Po1NpRUEiK8km2)"));
+    ui->addressIn_SM->setPlaceholderText(tr("Enter a testcoin address (e.g. 1NS17iag9jJgTHD1VXjvLCEnZuQ3rJDE9L)"));
     ui->signatureOut_SM->setPlaceholderText(tr("Click \"Sign Message\" to generate signature"));
 
-    ui->addressIn_VM->setPlaceholderText(tr("Enter a Litecoin address (e.g. Ler4HNAEfwYhBmGXcFP2Po1NpRUEiK8km2)"));
-    ui->signatureIn_VM->setPlaceholderText(tr("Enter Litecoin signature"));
+    ui->addressIn_VM->setPlaceholderText(tr("Enter a testcoin address (e.g. 1NS17iag9jJgTHD1VXjvLCEnZuQ3rJDE9L)"));
+    ui->signatureIn_VM->setPlaceholderText(tr("Enter testcoin signature"));
 #endif
 
     GUIUtil::setupAddressWidget(ui->addressIn_SM, this);
@@ -41,8 +41,8 @@ SignVerifyMessageDialog::SignVerifyMessageDialog(QWidget *parent) :
     ui->messageIn_VM->installEventFilter(this);
     ui->signatureIn_VM->installEventFilter(this);
 
-    ui->signatureOut_SM->setFont(GUIUtil::bitcoinAddressFont());
-    ui->signatureIn_VM->setFont(GUIUtil::bitcoinAddressFont());
+    ui->signatureOut_SM->setFont(GUIUtil::testcoinAddressFont());
+    ui->signatureIn_VM->setFont(GUIUtil::testcoinAddressFont());
 }
 
 SignVerifyMessageDialog::~SignVerifyMessageDialog()
@@ -55,13 +55,13 @@ void SignVerifyMessageDialog::setModel(WalletModel *model)
     this->model = model;
 }
 
-void SignVerifyMessageDialog::setAddress_SM(const QString &address)
+void SignVerifyMessageDialog::setAddress_SM(QString address)
 {
     ui->addressIn_SM->setText(address);
     ui->messageIn_SM->setFocus();
 }
 
-void SignVerifyMessageDialog::setAddress_VM(const QString &address)
+void SignVerifyMessageDialog::setAddress_VM(QString address)
 {
     ui->addressIn_VM->setText(address);
     ui->messageIn_VM->setFocus();
@@ -105,7 +105,7 @@ void SignVerifyMessageDialog::on_signMessageButton_SM_clicked()
     /* Clear old signature to ensure users don't get confused on error with an old signature displayed */
     ui->signatureOut_SM->clear();
 
-    CBitcoinAddress addr(ui->addressIn_SM->text().toStdString());
+    CtestcoinAddress addr(ui->addressIn_SM->text().toStdString());
     if (!addr.IsValid())
     {
         ui->addressIn_SM->setValid(false);
@@ -186,7 +186,7 @@ void SignVerifyMessageDialog::on_addressBookButton_VM_clicked()
 
 void SignVerifyMessageDialog::on_verifyMessageButton_VM_clicked()
 {
-    CBitcoinAddress addr(ui->addressIn_VM->text().toStdString());
+    CtestcoinAddress addr(ui->addressIn_VM->text().toStdString());
     if (!addr.IsValid())
     {
         ui->addressIn_VM->setValid(false);
@@ -218,8 +218,8 @@ void SignVerifyMessageDialog::on_verifyMessageButton_VM_clicked()
     ss << strMessageMagic;
     ss << ui->messageIn_VM->document()->toPlainText().toStdString();
 
-    CPubKey pubkey;
-    if (!pubkey.RecoverCompact(Hash(ss.begin(), ss.end()), vchSig))
+    CKey key;
+    if (!key.SetCompactSignature(Hash(ss.begin(), ss.end()), vchSig))
     {
         ui->signatureIn_VM->setValid(false);
         ui->statusLabel_VM->setStyleSheet("QLabel { color: red; }");
@@ -227,7 +227,7 @@ void SignVerifyMessageDialog::on_verifyMessageButton_VM_clicked()
         return;
     }
 
-    if (!(CBitcoinAddress(pubkey.GetID()) == addr))
+    if (!(CtestcoinAddress(key.GetPubKey().GetID()) == addr))
     {
         ui->statusLabel_VM->setStyleSheet("QLabel { color: red; }");
         ui->statusLabel_VM->setText(QString("<nobr>") + tr("Message verification failed.") + QString("</nobr>"));

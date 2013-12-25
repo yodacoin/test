@@ -25,9 +25,9 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const CWallet *
 {
     QList<TransactionRecord> parts;
     int64 nTime = wtx.GetTxTime();
-    int64 nCredit = wtx.GetCredit(true);
-    int64 nDebit = wtx.GetDebit();
-    int64 nNet = nCredit - nDebit;
+    mpq nCredit = wtx.GetCredit(wtx.nRefHeight, true);
+    mpq nDebit = wtx.GetDebit(wtx.nRefHeight);
+    mpq nNet = nCredit - nDebit;
     uint256 hash = wtx.GetHash();
     std::map<std::string, std::string> mapValue = wtx.mapValue;
 
@@ -43,12 +43,12 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const CWallet *
                 TransactionRecord sub(hash, nTime);
                 CTxDestination address;
                 sub.idx = parts.size(); // sequence number
-                sub.credit = txout.nValue;
+                sub.credit = GetPresentValue(wtx, txout, wtx.nRefHeight);
                 if (ExtractDestination(txout.scriptPubKey, address) && IsMine(*wallet, address))
                 {
-                    // Received by Bitcoin Address
+                    // Received by testcoin Address
                     sub.type = TransactionRecord::RecvWithAddress;
-                    sub.address = CBitcoinAddress(address).ToString();
+                    sub.address = CtestcoinAddress(address).ToString();
                 }
                 else
                 {
@@ -61,6 +61,8 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const CWallet *
                     // Generated
                     sub.type = TransactionRecord::Generated;
                 }
+
+                sub.refheight = wtx.nRefHeight;
 
                 parts.append(sub);
             }
@@ -79,17 +81,19 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const CWallet *
         if (fAllFromMe && fAllToMe)
         {
             // Payment to self
-            int64 nChange = wtx.GetChange();
+            mpq nChange = wtx.GetChange(wtx.nRefHeight);
+            mpq debit = -(nDebit - nChange);
+            mpq credit = nCredit - nChange;
 
             parts.append(TransactionRecord(hash, nTime, TransactionRecord::SendToSelf, "",
-                            -(nDebit - nChange), nCredit - nChange));
+                         debit, credit, wtx.nRefHeight));
         }
         else if (fAllFromMe)
         {
             //
             // Debit
             //
-            int64 nTxFee = nDebit - wtx.GetValueOut();
+            mpq nTxFee = nDebit - wtx.GetValueOut();
 
             for (unsigned int nOut = 0; nOut < wtx.vout.size(); nOut++)
             {
@@ -107,9 +111,9 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const CWallet *
                 CTxDestination address;
                 if (ExtractDestination(txout.scriptPubKey, address))
                 {
-                    // Sent to Bitcoin Address
+                    // Sent to testcoin Address
                     sub.type = TransactionRecord::SendToAddress;
-                    sub.address = CBitcoinAddress(address).ToString();
+                    sub.address = CtestcoinAddress(address).ToString();
                 }
                 else
                 {
@@ -118,7 +122,7 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const CWallet *
                     sub.address = mapValue["to"];
                 }
 
-                int64 nValue = txout.nValue;
+                mpq nValue = GetPresentValue(wtx, txout, wtx.nRefHeight);
                 /* Add fee to first output */
                 if (nTxFee > 0)
                 {
@@ -126,6 +130,8 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const CWallet *
                     nTxFee = 0;
                 }
                 sub.debit = -nValue;
+
+                sub.refheight = wtx.nRefHeight;
 
                 parts.append(sub);
             }
@@ -135,7 +141,7 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const CWallet *
             //
             // Mixed debit transaction, can't break down payees
             //
-            parts.append(TransactionRecord(hash, nTime, TransactionRecord::Other, "", nNet, 0));
+            parts.append(TransactionRecord(hash, nTime, TransactionRecord::Other, "", nNet, 0, wtx.nRefHeight));
         }
     }
 
@@ -167,7 +173,7 @@ void TransactionRecord::updateStatus(const CWalletTx &wtx)
         if (wtx.nLockTime < LOCKTIME_THRESHOLD)
         {
             status.status = TransactionStatus::OpenUntilBlock;
-            status.open_for = wtx.nLockTime - nBestHeight + 1;
+            status.open_for = nBestHeight - wtx.nLockTime;
         }
         else
         {
@@ -194,7 +200,7 @@ void TransactionRecord::updateStatus(const CWalletTx &wtx)
     // For generated transactions, determine maturity
     if(type == TransactionRecord::Generated)
     {
-        int64 nCredit = wtx.GetCredit(true);
+        mpq nCredit = wtx.GetCredit(wtx.nRefHeight, true);
         if (nCredit == 0)
         {
             status.maturity = TransactionStatus::Immature;

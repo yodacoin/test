@@ -19,7 +19,7 @@ AskPassphraseDialog::AskPassphraseDialog(Mode mode, QWidget *parent) :
     ui->passEdit1->setMaxLength(MAX_PASSPHRASE_SIZE);
     ui->passEdit2->setMaxLength(MAX_PASSPHRASE_SIZE);
     ui->passEdit3->setMaxLength(MAX_PASSPHRASE_SIZE);
-
+    
     // Setup Caps Lock detection.
     ui->passEdit1->installEventFilter(this);
     ui->passEdit2->installEventFilter(this);
@@ -98,7 +98,7 @@ void AskPassphraseDialog::accept()
             break;
         }
         QMessageBox::StandardButton retval = QMessageBox::question(this, tr("Confirm wallet encryption"),
-                 tr("Warning: If you encrypt your wallet and lose your passphrase, you will <b>LOSE ALL OF YOUR LITECOINS</b>!") + "<br><br>" + tr("Are you sure you wish to encrypt your wallet?"),
+                 tr("Warning: If you encrypt your wallet and lose your passphrase, you will <b>LOSE ALL OF YOUR testCOINS</b>!") + "<br><br>" + tr("Are you sure you wish to encrypt your wallet?"),
                  QMessageBox::Yes|QMessageBox::Cancel,
                  QMessageBox::Cancel);
         if(retval == QMessageBox::Yes)
@@ -108,15 +108,15 @@ void AskPassphraseDialog::accept()
                 if(model->setWalletEncrypted(true, newpass1))
                 {
                     QMessageBox::warning(this, tr("Wallet encrypted"),
-                                         "<qt>" +
-                                         tr("Litecoin will close now to finish the encryption process. "
+                                         "<qt>" + 
+                                         tr("testcoin will close now to finish the encryption process. "
                                          "Remember that encrypting your wallet cannot fully protect "
-                                         "your litecoins from being stolen by malware infecting your computer.") +
-                                         "<br><br><b>" +
+                                         "your testcoins from being stolen by malware infecting your computer.") + 
+                                         "<br><br><b>" + 
                                          tr("IMPORTANT: Any previous backups you have made of your wallet file "
                                          "should be replaced with the newly generated, encrypted wallet file. "
                                          "For security reasons, previous backups of the unencrypted wallet file "
-                                         "will become useless as soon as you start using the new, encrypted wallet.") +
+                                         "will become useless as soon as you start using the new, encrypted wallet.") + 
                                          "</b></qt>");
                     QApplication::quit();
                 }
@@ -235,7 +235,7 @@ bool AskPassphraseDialog::eventFilter(QObject *object, QEvent *event)
         if (str.length() != 0) {
             const QChar *psz = str.unicode();
             bool fShift = (ke->modifiers() & Qt::ShiftModifier) != 0;
-            if ((fShift && *psz >= 'a' && *psz <= 'z') || (!fShift && *psz >= 'A' && *psz <= 'Z')) {
+            if ((fShift && psz->isLower()) || (!fShift && psz->isUpper())) {
                 fCapsLock = true;
                 ui->capsLabel->setText(tr("Warning: The Caps Lock key is on!"));
             } else if (psz->isLetter()) {

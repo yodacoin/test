@@ -1,8 +1,9 @@
 #ifndef SENDCOINSDIALOG_H
 #define SENDCOINSDIALOG_H
 
+#include "bignum.h" // for mpq
+
 #include <QDialog>
-#include <QString>
 
 namespace Ui {
     class SendCoinsDialog;
@@ -15,7 +16,7 @@ QT_BEGIN_NAMESPACE
 class QUrl;
 QT_END_NAMESPACE
 
-/** Dialog for sending bitcoins */
+/** Dialog for sending testcoins */
 class SendCoinsDialog : public QDialog
 {
     Q_OBJECT
@@ -30,7 +31,6 @@ public:
      */
     QWidget *setupTabChain(QWidget *prev);
 
-    void setAddress(const QString &address);
     void pasteEntry(const SendCoinsRecipient &rv);
     bool handleURI(const QString &uri);
 
@@ -40,7 +40,7 @@ public slots:
     void accept();
     SendCoinsEntry *addEntry();
     void updateRemoveEnabled();
-    void setBalance(qint64 balance, qint64 unconfirmedBalance, qint64 immatureBalance);
+    void setBalance(const mpq& balance, const mpq& unconfirmedBalance, const mpq& immatureBalance);
 
 private:
     Ui::SendCoinsDialog *ui;
@@ -51,19 +51,6 @@ private slots:
     void on_sendButton_clicked();
     void removeEntry(SendCoinsEntry* entry);
     void updateDisplayUnit();
-    void coinControlFeatureChanged(bool);
-    void coinControlButtonClicked();
-    void coinControlChangeChecked(int);
-    void coinControlChangeEdited(const QString &);
-    void coinControlUpdateLabels();
-    void coinControlClipboardQuantity();
-    void coinControlClipboardAmount();
-    void coinControlClipboardFee();
-    void coinControlClipboardAfterFee();
-    void coinControlClipboardBytes();
-    void coinControlClipboardPriority();
-    void coinControlClipboardLowOutput();
-    void coinControlClipboardChange();
 };
 
 #endif // SENDCOINSDIALOG_H
