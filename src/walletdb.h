@@ -2,8 +2,8 @@
 // Copyright (c) 2009-2012 The Bitcoin developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#ifndef testCOIN_WALLETDB_H
-#define testCOIN_WALLETDB_H
+#ifndef BITCOIN_WALLETDB_H
+#define BITCOIN_WALLETDB_H
 
 #include "db.h"
 #include "base58.h"
@@ -53,18 +53,18 @@ public:
     bool WriteKey(const CPubKey& vchPubKey, const CPrivKey& vchPrivKey)
     {
         nWalletDBUpdated++;
-        return Write(std::make_pair(std::string("key"), vchPubKey.Raw()), vchPrivKey, false);
+        return Write(std::make_pair(std::string("key"), vchPubKey), vchPrivKey, false);
     }
 
     bool WriteCryptedKey(const CPubKey& vchPubKey, const std::vector<unsigned char>& vchCryptedSecret, bool fEraseUnencryptedKey = true)
     {
         nWalletDBUpdated++;
-        if (!Write(std::make_pair(std::string("ckey"), vchPubKey.Raw()), vchCryptedSecret, false))
+        if (!Write(std::make_pair(std::string("ckey"), vchPubKey), vchCryptedSecret, false))
             return false;
         if (fEraseUnencryptedKey)
         {
-            Erase(std::make_pair(std::string("key"), vchPubKey.Raw()));
-            Erase(std::make_pair(std::string("wkey"), vchPubKey.Raw()));
+            Erase(std::make_pair(std::string("key"), vchPubKey));
+            Erase(std::make_pair(std::string("wkey"), vchPubKey));
         }
         return true;
     }
@@ -101,7 +101,7 @@ public:
     bool WriteDefaultKey(const CPubKey& vchPubKey)
     {
         nWalletDBUpdated++;
-        return Write(std::string("defaultkey"), vchPubKey.Raw());
+        return Write(std::string("defaultkey"), vchPubKey);
     }
 
     bool ReadPool(int64 nPool, CKeyPool& keypool)
@@ -151,7 +151,7 @@ private:
     bool WriteAccountingEntry(const uint64 nAccEntryNum, const CAccountingEntry& acentry);
 public:
     bool WriteAccountingEntry(const CAccountingEntry& acentry);
-    mpq GetAccountCreditDebit(const std::string& strAccount, int nRefHeight);
+    int64 GetAccountCreditDebit(const std::string& strAccount);
     void ListAccountCreditDebit(const std::string& strAccount, std::list<CAccountingEntry>& acentries);
 
     DBErrors ReorderTransactions(CWallet*);
@@ -160,4 +160,4 @@ public:
     static bool Recover(CDBEnv& dbenv, std::string filename);
 };
 
-#endif // testCOIN_WALLETDB_H
+#endif // BITCOIN_WALLETDB_H

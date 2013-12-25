@@ -5,7 +5,7 @@
 #include "walletmodel.h"
 #include "addresstablemodel.h"
 #include "transactiontablemodel.h"
-#include "testcoinunits.h"
+#include "bitcoinunits.h"
 #include "csvmodelwriter.h"
 #include "transactiondescdialog.h"
 #include "editaddressdialog.h"
@@ -20,12 +20,9 @@
 #include <QLineEdit>
 #include <QTableView>
 #include <QHeaderView>
-#include <QPushButton>
 #include <QMessageBox>
 #include <QPoint>
 #include <QMenu>
-#include <QApplication>
-#include <QClipboard>
 #include <QLabel>
 #include <QDateTimeEdit>
 
@@ -99,19 +96,6 @@ TransactionView::TransactionView(QWidget *parent) :
     amountWidget->setValidator(new QDoubleValidator(0, 1e20, 8, this));
     hlayout->addWidget(amountWidget);
 
-    refheightWidget = new QLineEdit(this);
-#if QT_VERSION >= 0x040700
-    /* Do not move this to the XML file, Qt before 4.7 will choke on it */
-    refheightWidget->setPlaceholderText(tr("Min height"));
-#endif
-#ifdef Q_WS_MAC
-    refheightWidget->setFixedWidth(97);
-#else
-    refheightWidget->setFixedWidth(100);
-#endif
-    refheightWidget->setValidator(new QIntValidator(0, 0x7f000000, this));
-    hlayout->addWidget(refheightWidget);
-
     QVBoxLayout *vlayout = new QVBoxLayout(this);
     vlayout->setContentsMargins(0,0,0,0);
     vlayout->setSpacing(0);
@@ -139,6 +123,7 @@ TransactionView::TransactionView(QWidget *parent) :
     QAction *copyAddressAction = new QAction(tr("Copy address"), this);
     QAction *copyLabelAction = new QAction(tr("Copy label"), this);
     QAction *copyAmountAction = new QAction(tr("Copy amount"), this);
+    QAction *copyTxIDAction = new QAction(tr("Copy transaction ID"), this);
     QAction *editLabelAction = new QAction(tr("Edit label"), this);
     QAction *showDetailsAction = new QAction(tr("Show transaction details"), this);
 
@@ -146,6 +131,7 @@ TransactionView::TransactionView(QWidget *parent) :
     contextMenu->addAction(copyAddressAction);
     contextMenu->addAction(copyLabelAction);
     contextMenu->addAction(copyAmountAction);
+    contextMenu->addAction(copyTxIDAction);
     contextMenu->addAction(editLabelAction);
     contextMenu->addAction(showDetailsAction);
 
@@ -154,7 +140,6 @@ TransactionView::TransactionView(QWidget *parent) :
     connect(typeWidget, SIGNAL(activated(int)), this, SLOT(chooseType(int)));
     connect(addressWidget, SIGNAL(textChanged(QString)), this, SLOT(changedPrefix(QString)));
     connect(amountWidget, SIGNAL(textChanged(QString)), this, SLOT(changedAmount(QString)));
-    connect(refheightWidget, SIGNAL(textChanged(QString)), this, SLOT(changedRefHeight(QString)));
 
     connect(view, SIGNAL(doubleClicked(QModelIndex)), this, SIGNAL(doubleClicked(QModelIndex)));
     connect(view, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(contextualMenu(QPoint)));
@@ -162,6 +147,7 @@ TransactionView::TransactionView(QWidget *parent) :
     connect(copyAddressAction, SIGNAL(triggered()), this, SLOT(copyAddress()));
     connect(copyLabelAction, SIGNAL(triggered()), this, SLOT(copyLabel()));
     connect(copyAmountAction, SIGNAL(triggered()), this, SLOT(copyAmount()));
+    connect(copyTxIDAction, SIGNAL(triggered()), this, SLOT(copyTxID()));
     connect(editLabelAction, SIGNAL(triggered()), this, SLOT(editLabel()));
     connect(showDetailsAction, SIGNAL(triggered()), this, SLOT(showDetails()));
 }
@@ -187,16 +173,15 @@ void TransactionView::setModel(WalletModel *model)
         transactionView->sortByColumn(TransactionTableModel::Status, Qt::DescendingOrder);
         transactionView->verticalHeader()->hide();
 
-        transactionView->horizontalHeader()->resizeSection(
-                TransactionTableModel::Status, 23);
-        transactionView->horizontalHeader()->resizeSection(
-                TransactionTableModel::Date, 120);
-        transactionView->horizontalHeader()->resizeSection(
-                TransactionTableModel::Type, 120);
-        transactionView->horizontalHeader()->setResizeMode(
-                TransactionTableModel::ToAddress, QHeaderView::Stretch);
-        transactionView->horizontalHeader()->resizeSection(
-                TransactionTableModel::Amount, 100);
+        transactionView->horizontalHeader()->resizeSection(TransactionTableModel::Status, 23);
+        transactionView->horizontalHeader()->resizeSection(TransactionTableModel::Date, 120);
+        transactionView->horizontalHeader()->resizeSection(TransactionTableModel::Type, 120);
+#if QT_VERSION < 0x050000
+        transactionView->horizontalHeader()->setResizeMode(TransactionTableModel::ToAddress, QHeaderView::Stretch);
+#else
+        transactionView->horizontalHeader()->setSectionResizeMode(TransactionTableModel::ToAddress, QHeaderView::Stretch);
+#endif
+        transactionView->horizontalHeader()->resizeSection(TransactionTableModel::Amount, 100);
     }
 }
 
@@ -267,8 +252,8 @@ void TransactionView::changedAmount(const QString &amount)
 {
     if(!transactionProxyModel)
         return;
-    mpq amount_parsed = 0;
-    if(testcoinUnits::parse(model->getOptionsModel()->getDisplayUnit(), amount, &amount_parsed))
+    qint64 amount_parsed = 0;
+    if(BitcoinUnits::parse(model->getOptionsModel()->getDisplayUnit(), amount, &amount_parsed))
     {
         transactionProxyModel->setMinAmount(amount_parsed);
     }
@@ -276,13 +261,6 @@ void TransactionView::changedAmount(const QString &amount)
     {
         transactionProxyModel->setMinAmount(0);
     }
-}
-
-void TransactionView::changedRefHeight(const QString &refheight)
-{
-    if(!transactionProxyModel)
-        return;
-    transactionProxyModel->setMinRefHeight(refheight.toInt());
 }
 
 void TransactionView::exportClicked()
@@ -336,6 +314,11 @@ void TransactionView::copyLabel()
 void TransactionView::copyAmount()
 {
     GUIUtil::copyEntryData(transactionView, 0, TransactionTableModel::FormattedAmountRole);
+}
+
+void TransactionView::copyTxID()
+{
+    GUIUtil::copyEntryData(transactionView, 0, TransactionTableModel::TxIDRole);
 }
 
 void TransactionView::editLabel()

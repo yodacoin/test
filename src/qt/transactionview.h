@@ -22,6 +22,7 @@ QT_END_NAMESPACE
 class TransactionView : public QWidget
 {
     Q_OBJECT
+
 public:
     explicit TransactionView(QWidget *parent = 0);
 
@@ -48,7 +49,6 @@ private:
     QComboBox *typeWidget;
     QLineEdit *addressWidget;
     QLineEdit *amountWidget;
-    QLineEdit *refheightWidget;
 
     QMenu *contextMenu;
 
@@ -66,6 +66,7 @@ private slots:
     void editLabel();
     void copyLabel();
     void copyAmount();
+    void copyTxID();
 
 signals:
     void doubleClicked(const QModelIndex&);
@@ -75,7 +76,6 @@ public slots:
     void chooseType(int idx);
     void changedPrefix(const QString &prefix);
     void changedAmount(const QString &amount);
-    void changedRefHeight(const QString &refheight);
     void exportClicked();
     void focusTransaction(const QModelIndex&);
 

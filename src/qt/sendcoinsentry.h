@@ -9,7 +9,7 @@ namespace Ui {
 class WalletModel;
 class SendCoinsRecipient;
 
-/** A single entry in the dialog for sending testcoins. */
+/** A single entry in the dialog for sending bitcoins. */
 class SendCoinsEntry : public QFrame
 {
     Q_OBJECT
@@ -26,6 +26,7 @@ public:
     bool isClear();
 
     void setValue(const SendCoinsRecipient &value);
+    void setAddress(const QString &address);
 
     /** Set up the tab chain manually, as Qt messes up the tab chain by default in some cases (issue https://bugreports.qt-project.org/browse/QTBUG-10907).
      */
@@ -39,6 +40,7 @@ public slots:
 
 signals:
     void removeEntry(SendCoinsEntry *entry);
+    void payAmountChanged();
 
 private slots:
     void on_deleteButton_clicked();

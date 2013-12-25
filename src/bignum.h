@@ -2,24 +2,14 @@
 // Copyright (c) 2009-2012 The Bitcoin developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#ifndef testCOIN_BIGNUM_H
-#define testCOIN_BIGNUM_H
+#ifndef BITCOIN_BIGNUM_H
+#define BITCOIN_BIGNUM_H
 
 #include <stdexcept>
 #include <vector>
 #include <openssl/bn.h>
 
-#include <stdint.h>
-#define MPFR_USE_INTMAX_T
-#include <mpfr.h>
-#include <gmp.h>
-#include <gmpxx.h>
-
-typedef mpz_class mpz;
-typedef mpq_class mpq;
-
 #include "util.h" // for uint64
-#include "version.h" // for PROTOCOL_VERSION
 
 /** Errors thrown by the bignum class */
 class bignum_error : public std::runtime_error
@@ -107,18 +97,6 @@ public:
         setvch(vch);
     }
 
-    explicit CBigNum(const mpz& z)
-    {
-        std::vector<unsigned char> vch;
-        BN_init(this);
-        SetHex(z.get_str(16));
-    }
-
-    mpz get_mpz() const
-    {
-        return mpz(ToString());
-    }
-
     void setulong(unsigned long n)
     {
         if (!BN_set_word(this, n))
@@ -153,7 +131,9 @@ public:
 
         if (sn < (int64)0)
         {
-            // Since the minimum signed integer cannot be represented as positive so long as its type is signed, and it's not well-defined what happens if you make it unsigned before negating it, we instead increment the negative integer by 1, convert it, then increment the (now positive) unsigned integer by 1 to compensate
+            // Since the minimum signed integer cannot be represented as positive so long as its type is signed, 
+            // and it's not well-defined what happens if you make it unsigned before negating it,
+            // we instead increment the negative integer by 1, convert it, then increment the (now positive) unsigned integer by 1 to compensate
             n = -(sn + 1);
             ++n;
             fNegative = true;
@@ -242,7 +222,7 @@ public:
         BN_mpi2bn(pch, p - pch, this);
     }
 
-    uint256 getuint256()
+    uint256 getuint256() const
     {
         unsigned int nSize = BN_bn2mpi(this, NULL);
         if (nSize < 4)
@@ -284,28 +264,68 @@ public:
         return vch;
     }
 
+    // The "compact" format is a representation of a whole
+    // number N using an unsigned 32bit number similar to a
+    // floating point format.
+    // The most significant 8 bits are the unsigned exponent of base 256.
+    // This exponent can be thought of as "number of bytes of N".
+    // The lower 23 bits are the mantissa.
+    // Bit number 24 (0x800000) represents the sign of N.
+    // N = (-1^sign) * mantissa * 256^(exponent-3)
+    //
+    // Satoshi's original implementation used BN_bn2mpi() and BN_mpi2bn().
+    // MPI uses the most significant bit of the first byte as sign.
+    // Thus 0x1234560000 is compact (0x05123456)
+    // and  0xc0de000000 is compact (0x0600c0de)
+    // (0x05c0de00) would be -0x40de000000
+    //
+    // Bitcoin only uses this "compact" format for encoding difficulty
+    // targets, which are unsigned 256bit quantities.  Thus, all the
+    // complexities of the sign bit and using base 256 are probably an
+    // implementation accident.
+    //
+    // This implementation directly uses shifts instead of going
+    // through an intermediate MPI representation.
     CBigNum& SetCompact(unsigned int nCompact)
     {
         unsigned int nSize = nCompact >> 24;
-        std::vector<unsigned char> vch(4 + nSize);
-        vch[3] = nSize;
-        if (nSize >= 1) vch[4] = (nCompact >> 16) & 0xff;
-        if (nSize >= 2) vch[5] = (nCompact >> 8) & 0xff;
-        if (nSize >= 3) vch[6] = (nCompact >> 0) & 0xff;
-        BN_mpi2bn(&vch[0], vch.size(), this);
+        bool fNegative     =(nCompact & 0x00800000) != 0;
+        unsigned int nWord = nCompact & 0x007fffff;
+        if (nSize <= 3)
+        {
+            nWord >>= 8*(3-nSize);
+            BN_set_word(this, nWord);
+        }
+        else
+        {
+            BN_set_word(this, nWord);
+            BN_lshift(this, this, 8*(nSize-3));
+        }
+        BN_set_negative(this, fNegative);
         return *this;
     }
 
     unsigned int GetCompact() const
     {
-        unsigned int nSize = BN_bn2mpi(this, NULL);
-        std::vector<unsigned char> vch(nSize);
-        nSize -= 4;
-        BN_bn2mpi(this, &vch[0]);
-        unsigned int nCompact = nSize << 24;
-        if (nSize >= 1) nCompact |= (vch[4] << 16);
-        if (nSize >= 2) nCompact |= (vch[5] << 8);
-        if (nSize >= 3) nCompact |= (vch[6] << 0);
+        unsigned int nSize = BN_num_bytes(this);
+        unsigned int nCompact = 0;
+        if (nSize <= 3)
+            nCompact = BN_get_word(this) << 8*(3-nSize);
+        else
+        {
+            CBigNum bn;
+            BN_rshift(&bn, this, 8*(nSize-3));
+            nCompact = BN_get_word(&bn);
+        }
+        // The 0x00800000 bit denotes the sign.
+        // Thus, if it is already set, divide the mantissa by 256 and increase the exponent.
+        if (nCompact & 0x00800000)
+        {
+            nCompact >>= 8;
+            nSize++;
+        }
+        nCompact |= nSize << 24;
+        nCompact |= (BN_is_negative(this) ? 0x00800000 : 0);
         return nCompact;
     }
 
@@ -566,46 +586,5 @@ inline bool operator<=(const CBigNum& a, const CBigNum& b) { return (BN_cmp(&a, 
 inline bool operator>=(const CBigNum& a, const CBigNum& b) { return (BN_cmp(&a, &b) >= 0); }
 inline bool operator<(const CBigNum& a, const CBigNum& b)  { return (BN_cmp(&a, &b) < 0); }
 inline bool operator>(const CBigNum& a, const CBigNum& b)  { return (BN_cmp(&a, &b) > 0); }
-
-inline unsigned int GetSerializeSize(const mpz& a, int nType, int nVersion)
-{
-    return CBigNum(a).GetSerializeSize(nType, nVersion);
-}
-template<typename Stream>
-inline void Serialize(Stream& s, const mpz& a, int nType, int nVersion)
-{
-    CBigNum(a).Serialize(s, nType, nVersion);
-}
-template<typename Stream>
-inline void Unserialize(Stream& s, mpz& a, int nType, int nVersion)
-{
-    CBigNum bn;
-    bn.Unserialize(s, nType, nVersion);
-    a = bn.get_mpz();
-}
-
-inline unsigned int GetSerializeSize(const mpq& a, int nType, int nVersion)
-{
-    mpq q(a);
-    q.canonicalize();
-    return GetSerializeSize(q.get_num(), nType, nVersion) +
-           GetSerializeSize(q.get_den(), nType, nVersion);
-}
-template<typename Stream>
-inline void Serialize(Stream& s, const mpq& a, int nType, int nVersion)
-{
-    mpq q(a);
-    q.canonicalize();
-    Serialize(s, q.get_num(), nType, nVersion);
-    Serialize(s, q.get_den(), nType, nVersion);
-}
-template<typename Stream>
-inline void Unserialize(Stream& s, mpq& a, int nType, int nVersion)
-{
-    mpq r;
-    Unserialize(s, r.get_num(), nType, nVersion);
-    Unserialize(s, r.get_den(), nType, nVersion);
-    r.canonicalize(); a = r;
-}
 
 #endif

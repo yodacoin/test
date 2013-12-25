@@ -4,10 +4,12 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "main.h"
-#include "testcoinrpc.h"
+#include "bitcoinrpc.h"
 
 using namespace json_spirit;
 using namespace std;
+
+void ScriptPubKeyToJSON(const CScript& scriptPubKey, Object& out);
 
 double GetDifficulty(const CBlockIndex* blockindex)
 {
@@ -79,6 +81,15 @@ Value getblockcount(const Array& params, bool fHelp)
     return nBestHeight;
 }
 
+Value getbestblockhash(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "getbestblockhash\n"
+            "Returns the hash of the best (tip) block in the longest block chain.");
+
+    return hashBestChain.GetHex();
+}
 
 Value getdifficulty(const Array& params, bool fHelp)
 {
@@ -98,8 +109,12 @@ Value settxfee(const Array& params, bool fHelp)
             "settxfee <amount>\n"
             "<amount> is a real and is rounded to the nearest 0.00000001");
 
-    nTransactionFee = AmountFromValue(params[0]);
+    // Amount
+    int64 nAmount = 0;
+    if (params[0].get_real() != 0.0)
+        nAmount = AmountFromValue(params[0]);        // rejects 0.0 amounts
 
+    nTransactionFee = nAmount;
     return true;
 }
 
@@ -137,25 +152,119 @@ Value getblockhash(const Array& params, bool fHelp)
 
 Value getblock(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() != 1)
+    if (fHelp || params.size() < 1 || params.size() > 2)
         throw runtime_error(
-            "getblock <hash>\n"
-            "Returns details of a block with given block-hash.");
+            "getblock <hash> [verbose=true]\n"
+            "If verbose is false, returns a string that is serialized, hex-encoded data for block <hash>.\n"
+            "If verbose is true, returns an Object with information about block <hash>."
+        );
 
     std::string strHash = params[0].get_str();
     uint256 hash(strHash);
+
+    bool fVerbose = true;
+    if (params.size() > 1)
+        fVerbose = params[1].get_bool();
 
     if (mapBlockIndex.count(hash) == 0)
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
 
     CBlock block;
     CBlockIndex* pblockindex = mapBlockIndex[hash];
-    block.ReadFromDisk(pblockindex, true);
+    block.ReadFromDisk(pblockindex);
+
+    if (!fVerbose)
+    {
+        CDataStream ssBlock(SER_NETWORK, PROTOCOL_VERSION);
+        ssBlock << block;
+        std::string strHex = HexStr(ssBlock.begin(), ssBlock.end());
+        return strHex;
+    }
 
     return blockToJSON(block, pblockindex);
 }
 
+Value gettxoutsetinfo(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "gettxoutsetinfo\n"
+            "Returns statistics about the unspent transaction output set.");
 
+    Object ret;
 
+    CCoinsStats stats;
+    if (pcoinsTip->GetStats(stats)) {
+        ret.push_back(Pair("height", (boost::int64_t)stats.nHeight));
+        ret.push_back(Pair("bestblock", stats.hashBlock.GetHex()));
+        ret.push_back(Pair("transactions", (boost::int64_t)stats.nTransactions));
+        ret.push_back(Pair("txouts", (boost::int64_t)stats.nTransactionOutputs));
+        ret.push_back(Pair("bytes_serialized", (boost::int64_t)stats.nSerializedSize));
+        ret.push_back(Pair("hash_serialized", stats.hashSerialized.GetHex()));
+        ret.push_back(Pair("total_amount", ValueFromAmount(stats.nTotalAmount)));
+    }
+    return ret;
+}
 
+Value gettxout(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 2 || params.size() > 3)
+        throw runtime_error(
+            "gettxout <txid> <n> [includemempool=true]\n"
+            "Returns details about an unspent transaction output.");
+
+    Object ret;
+
+    std::string strHash = params[0].get_str();
+    uint256 hash(strHash);
+    int n = params[1].get_int();
+    bool fMempool = true;
+    if (params.size() > 2)
+        fMempool = params[2].get_bool();
+
+    CCoins coins;
+    if (fMempool) {
+        LOCK(mempool.cs);
+        CCoinsViewMemPool view(*pcoinsTip, mempool);
+        if (!view.GetCoins(hash, coins))
+            return Value::null;
+        mempool.pruneSpent(hash, coins); // TODO: this should be done by the CCoinsViewMemPool
+    } else {
+        if (!pcoinsTip->GetCoins(hash, coins))
+            return Value::null;
+    }
+    if (n<0 || (unsigned int)n>=coins.vout.size() || coins.vout[n].IsNull())
+        return Value::null;
+
+    ret.push_back(Pair("bestblock", pcoinsTip->GetBestBlock()->GetBlockHash().GetHex()));
+    if ((unsigned int)coins.nHeight == MEMPOOL_HEIGHT)
+        ret.push_back(Pair("confirmations", 0));
+    else
+        ret.push_back(Pair("confirmations", pcoinsTip->GetBestBlock()->nHeight - coins.nHeight + 1));
+    ret.push_back(Pair("value", ValueFromAmount(coins.vout[n].nValue)));
+    Object o;
+    ScriptPubKeyToJSON(coins.vout[n].scriptPubKey, o);
+    ret.push_back(Pair("scriptPubKey", o));
+    ret.push_back(Pair("version", coins.nVersion));
+    ret.push_back(Pair("coinbase", coins.fCoinBase));
+
+    return ret;
+}
+
+Value verifychain(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 2)
+        throw runtime_error(
+            "verifychain [check level] [num blocks]\n"
+            "Verifies blockchain database.");
+
+    int nCheckLevel = GetArg("-checklevel", 3);
+    int nCheckDepth = GetArg("-checkblocks", 288);
+    if (params.size() > 0)
+        nCheckLevel = params[0].get_int();
+    if (params.size() > 1)
+        nCheckDepth = params[1].get_int();
+
+    return VerifyDB(nCheckLevel, nCheckDepth);
+}
 

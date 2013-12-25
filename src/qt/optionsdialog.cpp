@@ -1,7 +1,7 @@
 #include "optionsdialog.h"
 #include "ui_optionsdialog.h"
 
-#include "testcoinunits.h"
+#include "bitcoinunits.h"
 #include "monitoreddatamapper.h"
 #include "netbase.h"
 #include "optionsmodel.h"
@@ -10,8 +10,6 @@
 #include <QIntValidator>
 #include <QLocale>
 #include <QMessageBox>
-#include <QRegExp>
-#include <QRegExpValidator>
 
 OptionsDialog::OptionsDialog(QWidget *parent) :
     QDialog(parent),
@@ -47,7 +45,8 @@ OptionsDialog::OptionsDialog(QWidget *parent) :
 
     /* Window elements init */
 #ifdef Q_OS_MAC
-    ui->tabWindow->setVisible(false);
+    /* remove Window tab on Mac */
+    ui->tabWidget->removeTab(ui->tabWidget->indexOf(ui->tabWindow));
 #endif
 
     /* Display elements init */
@@ -80,7 +79,7 @@ OptionsDialog::OptionsDialog(QWidget *parent) :
         }
     }
 
-    ui->unit->setModel(new testcoinUnits(this));
+    ui->unit->setModel(new BitcoinUnits(this));
 
     /* Widget-to-option mapper */
     mapper = new MonitoredDataMapper(this);
@@ -113,7 +112,7 @@ void OptionsDialog::setModel(OptionsModel *model)
         mapper->toFirst();
     }
 
-    /* update the display unit, to not use the default ("tsc") */
+    /* update the display unit, to not use the default ("BTC") */
     updateDisplayUnit();
 
     /* warn only when language selection changes by user action (placed here so init via mapper doesn't trigger this) */
@@ -127,8 +126,7 @@ void OptionsDialog::setMapper()
 {
     /* Main */
     mapper->addMapping(ui->transactionFee, OptionsModel::Fee);
-    mapper->addMapping(ui->testcoinAtStartup, OptionsModel::StartAtStartup);
-    mapper->addMapping(ui->detachDatabases, OptionsModel::DetachDatabases);
+    mapper->addMapping(ui->bitcoinAtStartup, OptionsModel::StartAtStartup);
 
     /* Network */
     mapper->addMapping(ui->mapPortUpnp, OptionsModel::MapPortUPnP);
@@ -148,6 +146,7 @@ void OptionsDialog::setMapper()
     mapper->addMapping(ui->lang, OptionsModel::Language);
     mapper->addMapping(ui->unit, OptionsModel::DisplayUnit);
     mapper->addMapping(ui->displayAddresses, OptionsModel::DisplayAddresses);
+    mapper->addMapping(ui->coinControlFeatures, OptionsModel::CoinControlFeatures);
 }
 
 void OptionsDialog::enableApplyButton()
@@ -178,6 +177,33 @@ void OptionsDialog::setSaveButtonState(bool fState)
     ui->okButton->setEnabled(fState);
 }
 
+void OptionsDialog::on_resetButton_clicked()
+{
+    if(model)
+    {
+        // confirmation dialog
+        QMessageBox::StandardButton btnRetVal = QMessageBox::question(this, tr("Confirm options reset"),
+            tr("Some settings may require a client restart to take effect.") + "<br><br>" + tr("Do you want to proceed?"),
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+
+        if(btnRetVal == QMessageBox::Cancel)
+            return;
+
+        disableApplyButton();
+
+        /* disable restart warning messages display */
+        fRestartWarningDisplayed_Lang = fRestartWarningDisplayed_Proxy = true;
+
+        /* reset all options and save the default values (QSettings) */
+        model->Reset();
+        mapper->toFirst();
+        mapper->submit();
+
+        /* re-enable restart warning messages display */
+        fRestartWarningDisplayed_Lang = fRestartWarningDisplayed_Proxy = false;
+    }
+}
+
 void OptionsDialog::on_okButton_clicked()
 {
     mapper->submit();
@@ -199,7 +225,7 @@ void OptionsDialog::showRestartWarning_Proxy()
 {
     if(!fRestartWarningDisplayed_Proxy)
     {
-        QMessageBox::warning(this, tr("Warning"), tr("This setting will take effect after restarting testcoin."), QMessageBox::Ok);
+        QMessageBox::warning(this, tr("Warning"), tr("This setting will take effect after restarting Litecoin."), QMessageBox::Ok);
         fRestartWarningDisplayed_Proxy = true;
     }
 }
@@ -208,7 +234,7 @@ void OptionsDialog::showRestartWarning_Lang()
 {
     if(!fRestartWarningDisplayed_Lang)
     {
-        QMessageBox::warning(this, tr("Warning"), tr("This setting will take effect after restarting testcoin."), QMessageBox::Ok);
+        QMessageBox::warning(this, tr("Warning"), tr("This setting will take effect after restarting Litecoin."), QMessageBox::Ok);
         fRestartWarningDisplayed_Lang = true;
     }
 }

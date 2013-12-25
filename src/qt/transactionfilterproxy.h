@@ -1,17 +1,14 @@
 #ifndef TRANSACTIONFILTERPROXY_H
 #define TRANSACTIONFILTERPROXY_H
 
-#include "bignum.h" // mpq
-
 #include <QSortFilterProxyModel>
 #include <QDateTime>
-
-#include <stdint.h>
 
 /** Filter the transaction list according to pre-specified rules. */
 class TransactionFilterProxy : public QSortFilterProxyModel
 {
     Q_OBJECT
+
 public:
     explicit TransactionFilterProxy(QObject *parent = 0);
 
@@ -30,13 +27,13 @@ public:
       @note Type filter takes a bit field created with TYPE() or ALL_TYPES
      */
     void setTypeFilter(quint32 modes);
-    void setMinAmount(const mpq& minimum);
-    void setMinRefHeight(int minimum);
+    void setMinAmount(qint64 minimum);
 
     /** Set maximum number of rows returned, -1 if unlimited. */
     void setLimit(int limit);
 
     int rowCount(const QModelIndex &parent = QModelIndex()) const;
+
 protected:
     bool filterAcceptsRow(int source_row, const QModelIndex & source_parent) const;
 
@@ -45,14 +42,8 @@ private:
     QDateTime dateTo;
     QString addrPrefix;
     quint32 typeFilter;
-    mpq minAmount;
-    int32_t minRefHeight;
+    qint64 minAmount;
     int limitRows;
-
-signals:
-
-public slots:
-
 };
 
 #endif // TRANSACTIONFILTERPROXY_H
