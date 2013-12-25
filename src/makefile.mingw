@@ -2,52 +2,33 @@
 # Distributed under the MIT/X11 software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-# Makefile for the MinGW g++ compiler/toolchain
-#
-# Assumes Berkeley DB, Boost, and OpenSSL have all been compiled and installed
-# into /usr/local (/usr/local/include, /usr/local/lib).
-#
-# If dependencies are somewhere else, run 'make DEPSDIR=/path/'
-#
-# Boost libraries are given wacky names that include the particular version of
-# boost you're using; set BOOST_SUFFIX appropriately.
-#
-# 'make clean' assumes it is running inside a MSYS shell, and uses 'rm'
-# to remove files.
-
-CXX ?= g++
-
-USE_UPNP:=-
+USE_UPNP:=0
 USE_IPV6:=1
 
-DEPSDIR?=/usr/local
-BOOST_SUFFIX?=-mgw46-mt-sd-1_52
-
 INCLUDEPATHS= \
- -I"$(CURDIR)" \
- -I"$(DEPSDIR)/include"
+ -I"C:\boost-1.50.0-mgw" \
+ -I"C:\db-4.8.30.NC-mgw\build_unix" \
+ -I"C:\openssl-1.0.1c-mgw\include"
 
 LIBPATHS= \
- -L"$(CURDIR)/leveldb" \
- -L"$(DEPSDIR)/lib"
+ -L"C:\boost-1.50.0-mgw\stage\lib" \
+ -L"C:\db-4.8.30.NC-mgw\build_unix" \
+ -L"C:\openssl-1.0.1c-mgw"
 
 LIBS= \
- -l leveldb \
- -l memenv \
- -l boost_system$(BOOST_SUFFIX) \
- -l boost_filesystem$(BOOST_SUFFIX) \
- -l boost_program_options$(BOOST_SUFFIX) \
- -l boost_thread$(BOOST_SUFFIX) \
- -l boost_chrono$(BOOST_SUFFIX) \
+ -l boost_system-mgw45-mt-s-1_50 \
+ -l boost_filesystem-mgw45-mt-s-1_50 \
+ -l boost_program_options-mgw45-mt-s-1_50 \
+ -l boost_thread-mgw45-mt-s-1_50 \
+ -l boost_chrono-mgw45-mt-s-1_50 \
  -l db_cxx \
  -l ssl \
  -l crypto
 
-DEFS=-D_MT -DWIN32 -D_WINDOWS -DBOOST_THREAD_USE_LIB -DBOOST_SPIRIT_THREADSAFE
+DEFS=-DWIN32 -D_WINDOWS -DBOOST_THREAD_USE_LIB -DBOOST_SPIRIT_THREADSAFE
 DEBUGFLAGS=-g
 CFLAGS=-mthreads -O2 -w -Wall -Wextra -Wformat -Wformat-security -Wno-unused-parameter $(DEBUGFLAGS) $(DEFS) $(INCLUDEPATHS)
-# enable: ASLR, DEP and large address aware
-LDFLAGS=-Wl,--dynamicbase -Wl,--nxcompat -Wl,--large-address-aware
+LDFLAGS=-Wl,--dynamicbase -Wl,--nxcompat
 
 TESTDEFS = -DTEST_DATA_DIR=$(abspath test/data)
 
@@ -55,6 +36,8 @@ ifndef USE_UPNP
 	override USE_UPNP = -
 endif
 ifneq (${USE_UPNP}, -)
+ INCLUDEPATHS += -I"C:\miniupnpc-1.6-mgw"
+ LIBPATHS += -L"C:\miniupnpc-1.6-mgw"
  LIBS += -l miniupnpc -l iphlpapi
  DEFS += -DSTATICLIB -DUSE_UPNP=$(USE_UPNP)
 endif
@@ -63,13 +46,12 @@ ifneq (${USE_IPV6}, -)
 	DEFS += -DUSE_IPV6=$(USE_IPV6)
 endif
 
-LIBS += -l mingwthrd -l kernel32 -l user32 -l gdi32 -l comdlg32 -l winspool -l winmm -l shell32 -l comctl32 -l ole32 -l oleaut32 -l uuid -l rpcrt4 -l advapi32 -l ws2_32 -l mswsock -l shlwapi
+LIBS += -l kernel32 -l user32 -l gdi32 -l comdlg32 -l winspool -l winmm -l shell32 -l comctl32 -l ole32 -l oleaut32 -l uuid -l rpcrt4 -l advapi32 -l ws2_32 -l mswsock -l shlwapi -lmpfr -lgmp -lgmpxx
 
 # TODO: make the mingw builds smarter about dependencies, like the linux/osx builds are
 HEADERS = $(wildcard *.h)
 
 OBJS= \
-    leveldb/libleveldb.a \
     obj/alert.o \
     obj/version.o \
     obj/checkpoints.o \
@@ -79,11 +61,12 @@ OBJS= \
     obj/key.o \
     obj/db.o \
     obj/init.o \
+    obj/irc.o \
     obj/keystore.o \
     obj/main.o \
     obj/net.o \
     obj/protocol.o \
-    obj/bitcoinrpc.o \
+    obj/freicoinrpc.o \
     obj/rpcdump.o \
     obj/rpcnet.o \
     obj/rpcmining.o \
@@ -91,58 +74,35 @@ OBJS= \
     obj/rpcblockchain.o \
     obj/rpcrawtransaction.o \
     obj/script.o \
-    obj/scrypt.o \
     obj/sync.o \
     obj/util.o \
     obj/wallet.o \
     obj/walletdb.o \
-    obj/hash.o \
-    obj/bloom.o \
-    obj/noui.o \
-    obj/leveldb.o \
-    obj/txdb.o
+    obj/noui.o
 
-ifdef USE_SSE2
-DEFS += -DUSE_SSE2
-OBJS_SSE2= obj/scrypt-sse2.o
-OBJS += $(OBJS_SSE2)
-endif
 
-all: litecoind.exe
+all: freicoind.exe
 
-test check: test_litecoin.exe FORCE
-	test_litecoin.exe
-
-#
-# LevelDB support
-#
-DEFS += $(addprefix -I,$(CURDIR)/leveldb/include)
-DEFS += $(addprefix -I,$(CURDIR)/leveldb/helpers)
-
-leveldb/libleveldb.a:
-	cd leveldb && $(MAKE) CC=$(CC) CXX=$(CXX) OPT="$(CFLAGS)" TARGET_OS=NATIVE_WINDOWS libleveldb.a libmemenv.a && cd ..
-
-obj/%-sse2.o: %-sse2.cpp
-	$(CXX) -c $(CFLAGS) -msse2 -mstackrealign -o $@ $<
+test check: test_bitcoin.exe FORCE
+	test_bitcoin.exe
 
 obj/%.o: %.cpp $(HEADERS)
-	$(CXX) -c $(CFLAGS) -o $@ $<
+	g++ -c $(CFLAGS) -o $@ $<
 
-litecoind.exe: $(OBJS:obj/%=obj/%)
-	$(CXX) $(CFLAGS) $(LDFLAGS) -o $@ $(LIBPATHS) $^ $(LIBS)
+freicoind.exe: $(OBJS:obj/%=obj/%)
+	g++ $(CFLAGS) $(LDFLAGS) -o $@ $(LIBPATHS) $^ $(LIBS)
 
 TESTOBJS := $(patsubst test/%.cpp,obj-test/%.o,$(wildcard test/*.cpp))
 
 obj-test/%.o: test/%.cpp $(HEADERS)
-	$(CXX) -c $(TESTDEFS) $(CFLAGS) -o $@ $<
+	g++ -c $(TESTDEFS) $(CFLAGS) -o $@ $<
 
-test_litecoin.exe: $(TESTOBJS) $(filter-out obj/init.o,$(OBJS:obj/%=obj/%))
-	$(CXX) $(CFLAGS) $(LDFLAGS) -o $@ $(LIBPATHS) $^ -lboost_unit_test_framework$(BOOST_SUFFIX) $(LIBS)
+test_freicoin.exe: $(TESTOBJS) $(filter-out obj/init.o,$(OBJS:obj/%=obj/%))
+	g++ $(CFLAGS) $(LDFLAGS) -o $@ $(LIBPATHS) $^ -lboost_unit_test_framework $(LIBS)
 
 clean:
-	rm -f litecoind.exe test_litecoin.exe
-	rm -f obj/*
-	rm -f obj-test/*
-	cd leveldb && $(MAKE) TARGET_OS=NATIVE_WINDOWS clean && cd ..
+	-del /Q freicoind test_freicoin
+	-del /Q obj\*
+	-del /Q obj-test\*
 
 FORCE:

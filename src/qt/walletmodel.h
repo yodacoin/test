@@ -2,21 +2,14 @@
 #define WALLETMODEL_H
 
 #include <QObject>
-#include <vector>
-#include <map>
 
 #include "allocators.h" /* for SecureString */
+#include "bignum.h" // for mpq
 
 class OptionsModel;
 class AddressTableModel;
 class TransactionTableModel;
 class CWallet;
-class CKeyID;
-class CPubKey;
-class COutput;
-class COutPoint;
-class uint256;
-class CCoinControl;
 
 QT_BEGIN_NAMESPACE
 class QTimer;
@@ -27,14 +20,13 @@ class SendCoinsRecipient
 public:
     QString address;
     QString label;
-    qint64 amount;
+    mpq amount;
 };
 
-/** Interface to Bitcoin wallet from Qt view code. */
+/** Interface to testcoin wallet from Qt view code. */
 class WalletModel : public QObject
 {
     Q_OBJECT
-
 public:
     explicit WalletModel(CWallet *wallet, OptionsModel *optionsModel, QObject *parent = 0);
     ~WalletModel();
@@ -62,10 +54,10 @@ public:
     OptionsModel *getOptionsModel();
     AddressTableModel *getAddressTableModel();
     TransactionTableModel *getTransactionTableModel();
-    
-    qint64 getBalance(const CCoinControl *coinControl=NULL) const;
-    qint64 getUnconfirmedBalance() const;
-    qint64 getImmatureBalance() const;
+
+    mpq getBalance(int nBlockHeight) const;
+    mpq getUnconfirmedBalance(int nBlockHeight) const;
+    mpq getImmatureBalance(int nBlockHeight) const;
     int getNumTransactions() const;
     EncryptionStatus getEncryptionStatus() const;
 
@@ -75,17 +67,17 @@ public:
     // Return status record for SendCoins, contains error id + information
     struct SendCoinsReturn
     {
-        SendCoinsReturn(StatusCode status=Aborted,
-                         qint64 fee=0,
+        SendCoinsReturn(StatusCode status,
+                         const mpq& fee=0,
                          QString hex=QString()):
             status(status), fee(fee), hex(hex) {}
         StatusCode status;
-        qint64 fee; // is used in case status is "AmountWithFeeExceedsBalance"
+        mpq fee; // is used in case status is "AmountWithFeeExceedsBalance"
         QString hex; // is filled with the transaction hash if status is "OK"
     };
 
     // Send coins to a list of recipients
-    SendCoinsReturn sendCoins(const QList<SendCoinsRecipient> &recipients, const CCoinControl *coinControl=NULL);
+    SendCoinsReturn sendCoins(const QList<SendCoinsRecipient> &recipients, int nRefHeight=-1);
 
     // Wallet encryption
     bool setWalletEncrypted(bool encrypted, const SecureString &passphrase);
@@ -117,15 +109,6 @@ public:
 
     UnlockContext requestUnlock();
 
-    bool getPubKey(const CKeyID &address, CPubKey& vchPubKeyOut) const;
-    void getOutputs(const std::vector<COutPoint>& vOutpoints, std::vector<COutput>& vOutputs);
-    void listCoins(std::map<QString, std::vector<COutput> >& mapCoins) const;
-
-    bool isLockedCoin(uint256 hash, unsigned int n) const;
-    void lockCoin(COutPoint& output);
-    void unlockCoin(COutPoint& output);
-    void listLockedCoins(std::vector<COutPoint>& vOutpts);
-
 private:
     CWallet *wallet;
 
@@ -137,9 +120,9 @@ private:
     TransactionTableModel *transactionTableModel;
 
     // Cache some values to be able to detect changes
-    qint64 cachedBalance;
-    qint64 cachedUnconfirmedBalance;
-    qint64 cachedImmatureBalance;
+    mpq cachedBalance;
+    mpq cachedUnconfirmedBalance;
+    mpq cachedImmatureBalance;
     qint64 cachedNumTransactions;
     EncryptionStatus cachedEncryptionStatus;
     int cachedNumBlocks;
@@ -152,7 +135,7 @@ private:
 
 signals:
     // Signal that balance in wallet changed
-    void balanceChanged(qint64 balance, qint64 unconfirmedBalance, qint64 immatureBalance);
+    void balanceChanged(const mpq& balance, const mpq& unconfirmedBalance, const mpq& immatureBalance);
 
     // Number of transactions in wallet changed
     void numTransactionsChanged(int count);
@@ -165,8 +148,8 @@ signals:
     // this means that the unlocking failed or was cancelled.
     void requireUnlock();
 
-    // Asynchronous message notification
-    void message(const QString &title, const QString &message, unsigned int style);
+    // Asynchronous error notification
+    void error(const QString &title, const QString &message, bool modal);
 
 public slots:
     /* Wallet status might have changed */
@@ -178,5 +161,6 @@ public slots:
     /* Current, immature or unconfirmed balance might have changed - emit 'balanceChanged' if so */
     void pollBalanceChanged();
 };
+
 
 #endif // WALLETMODEL_H

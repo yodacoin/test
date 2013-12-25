@@ -3,7 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "init.h" // for pwalletMain
-#include "bitcoinrpc.h"
+#include "testcoinrpc.h"
 #include "ui_interface.h"
 #include "base58.h"
 
@@ -34,42 +34,36 @@ public:
 
 Value importprivkey(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() < 1 || params.size() > 3)
+    if (fHelp || params.size() < 1 || params.size() > 2)
         throw runtime_error(
-            "importprivkey <litecoinprivkey> [label] [rescan=true]\n"
+            "importprivkey <testcoinprivkey> [label]\n"
             "Adds a private key (as returned by dumpprivkey) to your wallet.");
 
     string strSecret = params[0].get_str();
     string strLabel = "";
     if (params.size() > 1)
         strLabel = params[1].get_str();
-
-    // Whether to perform rescan after import
-    bool fRescan = true;
-    if (params.size() > 2)
-        fRescan = params[2].get_bool();
-
-    CBitcoinSecret vchSecret;
+    CtestcoinSecret vchSecret;
     bool fGood = vchSecret.SetString(strSecret);
 
     if (!fGood) throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid private key");
 
-    CKey key = vchSecret.GetKey();
-    CPubKey pubkey = key.GetPubKey();
-    CKeyID vchAddress = pubkey.GetID();
+    CKey key;
+    bool fCompressed;
+    CSecret secret = vchSecret.GetSecret(fCompressed);
+    key.SetSecret(secret, fCompressed);
+    CKeyID vchAddress = key.GetPubKey().GetID();
     {
         LOCK2(cs_main, pwalletMain->cs_wallet);
 
         pwalletMain->MarkDirty();
         pwalletMain->SetAddressBookName(vchAddress, strLabel);
 
-        if (!pwalletMain->AddKeyPubKey(key, pubkey))
+        if (!pwalletMain->AddKey(key))
             throw JSONRPCError(RPC_WALLET_ERROR, "Error adding key to wallet");
 
-        if (fRescan) {
-            pwalletMain->ScanForWalletTransactions(pindexGenesisBlock, true);
-            pwalletMain->ReacceptWalletTransactions();
-        }
+        pwalletMain->ScanForWalletTransactions(pindexGenesisBlock, true);
+        pwalletMain->ReacceptWalletTransactions();
     }
 
     return Value::null;
@@ -79,18 +73,19 @@ Value dumpprivkey(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 1)
         throw runtime_error(
-            "dumpprivkey <litecoinaddress>\n"
-            "Reveals the private key corresponding to <litecoinaddress>.");
+            "dumpprivkey <testcoinaddress>\n"
+            "Reveals the private key corresponding to <testcoinaddress>.");
 
     string strAddress = params[0].get_str();
-    CBitcoinAddress address;
+    CtestcoinAddress address;
     if (!address.SetString(strAddress))
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Litecoin address");
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid testcoin address");
     CKeyID keyID;
     if (!address.GetKeyID(keyID))
         throw JSONRPCError(RPC_TYPE_ERROR, "Address does not refer to a key");
-    CKey vchSecret;
-    if (!pwalletMain->GetKey(keyID, vchSecret))
+    CSecret vchSecret;
+    bool fCompressed;
+    if (!pwalletMain->GetSecret(keyID, vchSecret, fCompressed))
         throw JSONRPCError(RPC_WALLET_ERROR, "Private key for address " + strAddress + " is not known");
-    return CBitcoinSecret(vchSecret).ToString();
+    return CtestcoinSecret(vchSecret, fCompressed).ToString();
 }

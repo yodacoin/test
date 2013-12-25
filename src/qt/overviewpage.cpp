@@ -1,14 +1,15 @@
 #include "overviewpage.h"
 #include "ui_overviewpage.h"
 
-#include "clientmodel.h"
 #include "walletmodel.h"
-#include "bitcoinunits.h"
+#include "testcoinunits.h"
 #include "optionsmodel.h"
 #include "transactiontablemodel.h"
 #include "transactionfilterproxy.h"
 #include "guiutil.h"
 #include "guiconstants.h"
+
+#include "main.h"
 
 #include <QAbstractItemDelegate>
 #include <QPainter>
@@ -20,7 +21,7 @@ class TxViewDelegate : public QAbstractItemDelegate
 {
     Q_OBJECT
 public:
-    TxViewDelegate(): QAbstractItemDelegate(), unit(BitcoinUnits::BTC)
+    TxViewDelegate(): QAbstractItemDelegate(), unit(testcoinUnits::tsc)
     {
 
     }
@@ -42,14 +43,13 @@ public:
 
         QDateTime date = index.data(TransactionTableModel::DateRole).toDateTime();
         QString address = index.data(Qt::DisplayRole).toString();
-        qint64 amount = index.data(TransactionTableModel::AmountRole).toLongLong();
+        mpq amount; ParseMoney(index.data(TransactionTableModel::AmountRole).toString().toStdString(), amount);
         bool confirmed = index.data(TransactionTableModel::ConfirmedRole).toBool();
         QVariant value = index.data(Qt::ForegroundRole);
         QColor foreground = option.palette.color(QPalette::Text);
-        if(value.canConvert<QBrush>())
+        if(qVariantCanConvert<QColor>(value))
         {
-            QBrush brush = qvariant_cast<QBrush>(value);
-            foreground = brush.color();
+            foreground = qvariant_cast<QColor>(value);
         }
 
         painter->setPen(foreground);
@@ -68,7 +68,7 @@ public:
             foreground = option.palette.color(QPalette::Text);
         }
         painter->setPen(foreground);
-        QString amountText = BitcoinUnits::formatWithUnit(unit, amount, true);
+        QString amountText = testcoinUnits::formatWithUnit(unit, RoundAbsolute(amount, ROUND_TOWARDS_ZERO), true);
         if(!confirmed)
         {
             amountText = QString("[") + amountText + QString("]");
@@ -94,8 +94,6 @@ public:
 OverviewPage::OverviewPage(QWidget *parent) :
     QWidget(parent),
     ui(new Ui::OverviewPage),
-    clientModel(0),
-    walletModel(0),
     currentBalance(-1),
     currentUnconfirmedBalance(-1),
     currentImmatureBalance(-1),
@@ -131,15 +129,15 @@ OverviewPage::~OverviewPage()
     delete ui;
 }
 
-void OverviewPage::setBalance(qint64 balance, qint64 unconfirmedBalance, qint64 immatureBalance)
+void OverviewPage::setBalance(const mpq& balance, const mpq& unconfirmedBalance, const mpq& immatureBalance)
 {
-    int unit = walletModel->getOptionsModel()->getDisplayUnit();
+    int unit = model->getOptionsModel()->getDisplayUnit();
     currentBalance = balance;
     currentUnconfirmedBalance = unconfirmedBalance;
     currentImmatureBalance = immatureBalance;
-    ui->labelBalance->setText(BitcoinUnits::formatWithUnit(unit, balance));
-    ui->labelUnconfirmed->setText(BitcoinUnits::formatWithUnit(unit, unconfirmedBalance));
-    ui->labelImmature->setText(BitcoinUnits::formatWithUnit(unit, immatureBalance));
+    ui->labelBalance->setText(testcoinUnits::formatWithUnit(unit, RoundAbsolute(balance, ROUND_TOWARDS_ZERO)));
+    ui->labelUnconfirmed->setText(testcoinUnits::formatWithUnit(unit, RoundAbsolute(unconfirmedBalance, ROUND_TOWARDS_ZERO)));
+    ui->labelImmature->setText(testcoinUnits::formatWithUnit(unit, RoundAbsolute(immatureBalance, ROUND_TOWARDS_ZERO)));
 
     // only show immature (newly mined) balance if it's non-zero, so as not to complicate things
     // for the non-mining users
@@ -148,20 +146,14 @@ void OverviewPage::setBalance(qint64 balance, qint64 unconfirmedBalance, qint64 
     ui->labelImmatureText->setVisible(showImmature);
 }
 
-void OverviewPage::setClientModel(ClientModel *model)
+void OverviewPage::setNumTransactions(int count)
 {
-    this->clientModel = model;
-    if(model)
-    {
-        // Show warning if this is a prerelease version
-        connect(model, SIGNAL(alertsChanged(QString)), this, SLOT(updateAlerts(QString)));
-        updateAlerts(model->getStatusBarWarnings());
-    }
+    ui->labelNumTransactions->setText(QLocale::system().toString(count));
 }
 
-void OverviewPage::setWalletModel(WalletModel *model)
+void OverviewPage::setModel(WalletModel *model)
 {
-    this->walletModel = model;
+    this->model = model;
     if(model && model->getOptionsModel())
     {
         // Set up transaction list
@@ -175,35 +167,34 @@ void OverviewPage::setWalletModel(WalletModel *model)
         ui->listTransactions->setModel(filter);
         ui->listTransactions->setModelColumn(TransactionTableModel::ToAddress);
 
+        int nBlockHeight = nBestHeight;
+
         // Keep up to date with wallet
-        setBalance(model->getBalance(), model->getUnconfirmedBalance(), model->getImmatureBalance());
-        connect(model, SIGNAL(balanceChanged(qint64, qint64, qint64)), this, SLOT(setBalance(qint64, qint64, qint64)));
+        setBalance(model->getBalance(nBlockHeight), model->getUnconfirmedBalance(nBlockHeight), model->getImmatureBalance(nBlockHeight));
+        connect(model, SIGNAL(balanceChanged(const mpq&, const mpq&, const mpq&)), this, SLOT(setBalance(const mpq&, const mpq&, const mpq&)));
+
+        setNumTransactions(model->getNumTransactions());
+        connect(model, SIGNAL(numTransactionsChanged(int)), this, SLOT(setNumTransactions(int)));
 
         connect(model->getOptionsModel(), SIGNAL(displayUnitChanged(int)), this, SLOT(updateDisplayUnit()));
     }
 
-    // update the display unit, to not use the default ("BTC")
+    // update the display unit, to not use the default ("tsc")
     updateDisplayUnit();
 }
 
 void OverviewPage::updateDisplayUnit()
 {
-    if(walletModel && walletModel->getOptionsModel())
+    if(model && model->getOptionsModel())
     {
         if(currentBalance != -1)
             setBalance(currentBalance, currentUnconfirmedBalance, currentImmatureBalance);
 
         // Update txdelegate->unit with the current unit
-        txdelegate->unit = walletModel->getOptionsModel()->getDisplayUnit();
+        txdelegate->unit = model->getOptionsModel()->getDisplayUnit();
 
         ui->listTransactions->update();
     }
-}
-
-void OverviewPage::updateAlerts(const QString &warnings)
-{
-    this->ui->labelAlerts->setVisible(!warnings.isEmpty());
-    this->ui->labelAlerts->setText(warnings);
 }
 
 void OverviewPage::showOutOfSyncWarning(bool fShow)

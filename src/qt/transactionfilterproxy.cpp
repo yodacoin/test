@@ -1,5 +1,6 @@
-#include "transactionfilterproxy.h"
+#include "util.h"
 
+#include "transactionfilterproxy.h"
 #include "transactiontablemodel.h"
 
 #include <QDateTime>
@@ -18,6 +19,7 @@ TransactionFilterProxy::TransactionFilterProxy(QObject *parent) :
     addrPrefix(),
     typeFilter(ALL_TYPES),
     minAmount(0),
+    minRefHeight(0),
     limitRows(-1)
 {
 }
@@ -30,7 +32,10 @@ bool TransactionFilterProxy::filterAcceptsRow(int sourceRow, const QModelIndex &
     QDateTime datetime = index.data(TransactionTableModel::DateRole).toDateTime();
     QString address = index.data(TransactionTableModel::AddressRole).toString();
     QString label = index.data(TransactionTableModel::LabelRole).toString();
-    qint64 amount = llabs(index.data(TransactionTableModel::AmountRole).toLongLong());
+    mpq amount;
+    if (!ParseMoney(index.data(TransactionTableModel::AmountRole).toString().toStdString(), amount))
+        return false;
+    int refheight = index.data(TransactionTableModel::RefHeightRole).toInt();
 
     if(!(TYPE(type) & typeFilter))
         return false;
@@ -39,6 +44,8 @@ bool TransactionFilterProxy::filterAcceptsRow(int sourceRow, const QModelIndex &
     if (!address.contains(addrPrefix, Qt::CaseInsensitive) && !label.contains(addrPrefix, Qt::CaseInsensitive))
         return false;
     if(amount < minAmount)
+        return false;
+    if (refheight < minRefHeight)
         return false;
 
     return true;
@@ -63,9 +70,15 @@ void TransactionFilterProxy::setTypeFilter(quint32 modes)
     invalidateFilter();
 }
 
-void TransactionFilterProxy::setMinAmount(qint64 minimum)
+void TransactionFilterProxy::setMinAmount(const mpq& minimum)
 {
     this->minAmount = minimum;
+    invalidateFilter();
+}
+
+void TransactionFilterProxy::setMinRefHeight(int minimum)
+{
+    this->minRefHeight = minimum;
     invalidateFilter();
 }
 

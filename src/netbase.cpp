@@ -6,7 +6,6 @@
 #include "netbase.h"
 #include "util.h"
 #include "sync.h"
-#include "hash.h"
 
 #ifndef WIN32
 #include <sys/fcntl.h>
@@ -72,14 +71,19 @@ bool static LookupIntern(const char *pszName, std::vector<CNetAddr>& vIP, unsign
 
     aiHint.ai_socktype = SOCK_STREAM;
     aiHint.ai_protocol = IPPROTO_TCP;
-#ifdef USE_IPV6
-    aiHint.ai_family = AF_UNSPEC;
-#else
-    aiHint.ai_family = AF_INET;
-#endif
 #ifdef WIN32
+#  ifdef USE_IPV6
+    aiHint.ai_family = AF_UNSPEC;
+#  else
+    aiHint.ai_family = AF_INET;
+#  endif
     aiHint.ai_flags = fAllowLookup ? 0 : AI_NUMERICHOST;
 #else
+#  ifdef USE_IPV6
+    aiHint.ai_family = AF_UNSPEC;
+#  else
+    aiHint.ai_family = AF_INET;
+#  endif
     aiHint.ai_flags = fAllowLookup ? AI_ADDRCONFIG : AI_NUMERICHOST;
 #endif
     struct addrinfo *aiRes = NULL;
@@ -114,12 +118,13 @@ bool static LookupIntern(const char *pszName, std::vector<CNetAddr>& vIP, unsign
 
 bool LookupHost(const char *pszName, std::vector<CNetAddr>& vIP, unsigned int nMaxSolutions, bool fAllowLookup)
 {
-    std::string strHost(pszName);
-    if (strHost.empty())
+    std::string str(pszName);
+    std::string strHost = str;
+    if (str.empty())
         return false;
-    if (boost::algorithm::starts_with(strHost, "[") && boost::algorithm::ends_with(strHost, "]"))
+    if (boost::algorithm::starts_with(str, "[") && boost::algorithm::ends_with(str, "]"))
     {
-        strHost = strHost.substr(1, strHost.size() - 2);
+        strHost = str.substr(1, str.size() - 2);
     }
 
     return LookupIntern(strHost.c_str(), vIP, nMaxSolutions, fAllowLookup);
@@ -216,9 +221,10 @@ bool static Socks5(string strDest, int port, SOCKET& hSocket)
         return error("Hostname too long");
     }
     char pszSocks5Init[] = "\5\1\0";
+    char *pszSocks5 = pszSocks5Init;
     ssize_t nSize = sizeof(pszSocks5Init) - 1;
 
-    ssize_t ret = send(hSocket, pszSocks5Init, nSize, MSG_NOSIGNAL);
+    ssize_t ret = send(hSocket, pszSocks5, nSize, MSG_NOSIGNAL);
     if (ret != nSize)
     {
         closesocket(hSocket);
@@ -407,7 +413,7 @@ bool static ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRe
     if (ioctlsocket(hSocket, FIONBIO, &fNonblock) == SOCKET_ERROR)
 #else
     fFlags = fcntl(hSocket, F_GETFL, 0);
-    if (fcntl(hSocket, F_SETFL, fFlags & ~O_NONBLOCK) == SOCKET_ERROR)
+    if (fcntl(hSocket, F_SETFL, fFlags & !O_NONBLOCK) == SOCKET_ERROR)
 #endif
     {
         closesocket(hSocket);
@@ -539,7 +545,7 @@ bool ConnectSocketByName(CService &addr, SOCKET& hSocketRet, const char *pszDest
 
 void CNetAddr::Init()
 {
-    memset(ip, 0, sizeof(ip));
+    memset(ip, 0, 16);
 }
 
 void CNetAddr::SetIP(const CNetAddr& ipIn)
@@ -860,7 +866,7 @@ std::vector<unsigned char> CNetAddr::GetGroup() const
         nBits = 4;
     }
     // for he.net, use /36 groups
-    else if (GetByte(15) == 0x20 && GetByte(14) == 0x01 && GetByte(13) == 0x04 && GetByte(12) == 0x70)
+    else if (GetByte(15) == 0x20 && GetByte(14) == 0x11 && GetByte(13) == 0x04 && GetByte(12) == 0x70)
         nBits = 36;
     // for the rest of the IPv6 network, use /32 groups
     else

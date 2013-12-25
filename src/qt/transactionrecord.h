@@ -1,6 +1,7 @@
 #ifndef TRANSACTIONRECORD_H
 #define TRANSACTIONRECORD_H
 
+#include "bignum.h" // for mpq
 #include "uint256.h"
 
 #include <QList>
@@ -14,8 +15,8 @@ class TransactionStatus
 {
 public:
     TransactionStatus():
-        confirmed(false), sortKey(""), maturity(Mature),
-        matures_in(0), status(Offline), depth(0), open_for(0), cur_num_blocks(-1)
+            confirmed(false), sortKey(""), maturity(Mature),
+            matures_in(0), status(Offline), depth(0), open_for(0), cur_num_blocks(-1)
     { }
 
     enum Maturity
@@ -47,9 +48,7 @@ public:
        @{*/
     Status status;
     int64 depth;
-    int64 open_for; /**< Timestamp if status==OpenUntilDate, otherwise number
-                      of additional blocks that need to be mined before
-                      finalization */
+    int64 open_for; /**< Timestamp if status==OpenUntilDate, otherwise number of blocks */
     /**@}*/
 
     /** Current number of blocks (to know whether cached status is still valid) */
@@ -77,21 +76,21 @@ public:
     static const int NumConfirmations = 6;
 
     TransactionRecord():
-            hash(), time(0), type(Other), address(""), debit(0), credit(0), idx(0)
+            hash(), time(0), type(Other), address(""), debit(0), credit(0), refheight(0), idx(0)
     {
     }
 
     TransactionRecord(uint256 hash, int64 time):
             hash(hash), time(time), type(Other), address(""), debit(0),
-            credit(0), idx(0)
+            credit(0), refheight(0), idx(0)
     {
     }
 
     TransactionRecord(uint256 hash, int64 time,
                 Type type, const std::string &address,
-                int64 debit, int64 credit):
+                const mpq& debit, const mpq& credit, int refheight):
             hash(hash), time(time), type(type), address(address), debit(debit), credit(credit),
-            idx(0)
+            refheight(refheight), idx(0)
     {
     }
 
@@ -106,8 +105,9 @@ public:
     int64 time;
     Type type;
     std::string address;
-    int64 debit;
-    int64 credit;
+    mpq debit;
+    mpq credit;
+    int refheight;
     /**@}*/
 
     /** Subtransaction index, for sort key */

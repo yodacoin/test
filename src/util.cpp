@@ -3,16 +3,6 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef WIN32
-// for posix_fallocate
-#ifdef __linux__
-#define _POSIX_C_SOURCE 200112L
-#endif
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/resource.h>
-#endif
-
 #include "util.h"
 #include "sync.h"
 #include "version.h"
@@ -74,17 +64,17 @@ bool fDebug = false;
 bool fDebugNet = false;
 bool fPrintToConsole = false;
 bool fPrintToDebugger = false;
+bool fRequestShutdown = false;
+bool fShutdown = false;
 bool fDaemon = false;
 bool fServer = false;
 bool fCommandLine = false;
 string strMiscWarning;
 bool fTestNet = false;
-bool fBloomFilters = true;
 bool fNoListen = false;
 bool fLogTimestamps = false;
 CMedianFilter<int64> vTimeOffsets(200,0);
-volatile bool fReopenDebugLog = false;
-bool fCachedPath[2] = {false, false};
+bool fReopenDebugLog = false;
 
 // Init OpenSSL library multithreading support
 static CCriticalSection** ppmutexOpenSSL;
@@ -166,7 +156,7 @@ void RandAddSeedPerfmon()
     if (ret == ERROR_SUCCESS)
     {
         RAND_add(pdata, nSize, nSize/100.0);
-        OPENSSL_cleanse(pdata, nSize);
+        memset(pdata, 0, nSize);
         printf("RandAddSeed() %lu bytes\n", nSize);
     }
 #endif
@@ -205,76 +195,62 @@ uint256 GetRandHash()
 
 
 
-//
-// OutputDebugStringF (aka printf -- there is a #define that we really
-// should get rid of one day) has been broken a couple of times now
-// by well-meaning people adding mutexes in the most straightforward way.
-// It breaks because it may be called by global destructors during shutdown.
-// Since the order of destruction of static/global objects is undefined,
-// defining a mutex as a global object doesn't work (the mutex gets
-// destroyed, and then some later destructor calls OutputDebugStringF,
-// maybe indirectly, and you get a core dump at shutdown trying to lock
-// the mutex).
 
-static boost::once_flag debugPrintInitFlag = BOOST_ONCE_INIT;
-// We use boost::call_once() to make sure these are initialized in
-// in a thread-safe manner the first time it is called:
-static FILE* fileout = NULL;
-static boost::mutex* mutexDebugLog = NULL;
-
-static void DebugPrintInit()
+inline int OutputDebugStringF(const char* pszFormat, ...)
 {
-    assert(fileout == NULL);
-    assert(mutexDebugLog == NULL);
-
-    boost::filesystem::path pathDebug = GetDataDir() / "debug.log";
-    fileout = fopen(pathDebug.string().c_str(), "a");
-    if (fileout) setbuf(fileout, NULL); // unbuffered
-
-    mutexDebugLog = new boost::mutex();
-}
-
-int OutputDebugStringF(const char* pszFormat, ...)
-{
-    int ret = 0; // Returns total number of characters written
+    int ret = 0;
     if (fPrintToConsole)
     {
         // print to console
         va_list arg_ptr;
         va_start(arg_ptr, pszFormat);
-        ret += vprintf(pszFormat, arg_ptr);
+        ret = vprintf(pszFormat, arg_ptr);
         va_end(arg_ptr);
     }
     else if (!fPrintToDebugger)
     {
-        static bool fStartedNewLine = true;
-        boost::call_once(&DebugPrintInit, debugPrintInitFlag);
+        // print to debug.log
+        static FILE* fileout = NULL;
 
-        if (fileout == NULL)
-            return ret;
-
-        boost::mutex::scoped_lock scoped_lock(*mutexDebugLog);
-
-        // reopen the log file, if requested
-        if (fReopenDebugLog) {
-            fReopenDebugLog = false;
+        if (!fileout)
+        {
             boost::filesystem::path pathDebug = GetDataDir() / "debug.log";
-            if (freopen(pathDebug.string().c_str(),"a",fileout) != NULL)
-                setbuf(fileout, NULL); // unbuffered
+            fileout = fopen(pathDebug.string().c_str(), "a");
+            if (fileout) setbuf(fileout, NULL); // unbuffered
         }
+        if (fileout)
+        {
+            static bool fStartedNewLine = true;
 
-        // Debug print useful for profiling
-        if (fLogTimestamps && fStartedNewLine)
-            ret += fprintf(fileout, "%s ", DateTimeStrFormat("%Y-%m-%d %H:%M:%S", GetTime()).c_str());
-        if (pszFormat[strlen(pszFormat) - 1] == '\n')
-            fStartedNewLine = true;
-        else
-            fStartedNewLine = false;
+            // This routine may be called by global destructors during shutdown.
+            // Since the order of destruction of static/global objects is undefined,
+            // allocate mutexDebugLog on the heap the first time this routine
+            // is called to avoid crashes during shutdown.
+            static boost::mutex* mutexDebugLog = NULL;
+            if (mutexDebugLog == NULL) mutexDebugLog = new boost::mutex();
+            boost::mutex::scoped_lock scoped_lock(*mutexDebugLog);
 
-        va_list arg_ptr;
-        va_start(arg_ptr, pszFormat);
-        ret += vfprintf(fileout, pszFormat, arg_ptr);
-        va_end(arg_ptr);
+            // reopen the log file, if requested
+            if (fReopenDebugLog) {
+                fReopenDebugLog = false;
+                boost::filesystem::path pathDebug = GetDataDir() / "debug.log";
+                if (freopen(pathDebug.string().c_str(),"a",fileout) != NULL)
+                    setbuf(fileout, NULL); // unbuffered
+            }
+
+            // Debug print useful for profiling
+            if (fLogTimestamps && fStartedNewLine)
+                fprintf(fileout, "%s ", DateTimeStrFormat("%x %H:%M:%S", GetTime()).c_str());
+            if (pszFormat[strlen(pszFormat) - 1] == '\n')
+                fStartedNewLine = true;
+            else
+                fStartedNewLine = false;
+
+            va_list arg_ptr;
+            va_start(arg_ptr, pszFormat);
+            ret = vfprintf(fileout, pszFormat, arg_ptr);
+            va_end(arg_ptr);
+        }
     }
 
 #ifdef WIN32
@@ -297,7 +273,6 @@ int OutputDebugStringF(const char* pszFormat, ...)
             {
                 OutputDebugStringA(buffer.substr(line_start, line_end - line_start).c_str());
                 line_start = line_end + 1;
-                ret += line_end-line_start;
             }
             buffer.erase(0, line_start);
         }
@@ -388,86 +363,201 @@ void ParseString(const string& str, char c, vector<string>& v)
 
 string FormatMoney(int64 n, bool fPlus)
 {
-    // Note: not using straight sprintf here because we do NOT want
-    // localized number formatting.
-    int64 n_abs = (n > 0 ? n : -n);
-    int64 quotient = n_abs/COIN;
-    int64 remainder = n_abs%COIN;
-    string str = strprintf("%"PRI64d".%08"PRI64d, quotient, remainder);
+    return FormatMoney(i64_to_mpz(n), fPlus);
+}
 
-    // Right-trim excess zeros before the decimal point:
-    int nTrim = 0;
-    for (int i = str.size()-1; (str[i] == '0' && isdigit(str[i-2])); --i)
-        ++nTrim;
-    if (nTrim)
-        str.erase(str.size()-nTrim, nTrim);
+string FormatMoney(const mpq &q, bool fPlus)
+{
+    const bool negative = q < 0;
+    const mpq q_abs = abs(q);
+    const mpz integer = q_abs.get_num() / q_abs.get_den();
+    const mpq remainder = q_abs - integer;
 
-    if (n < 0)
+    string str = integer.get_str();
+    if (str.length() < 9)
+        str.insert((unsigned int)0, 9-str.length(), '0');
+    str.insert(str.length()-8, 1, '.');
+
+    if (negative)
         str.insert((unsigned int)0, 1, '-');
-    else if (fPlus && n > 0)
+    else if (fPlus && q > 0)
         str.insert((unsigned int)0, 1, '+');
+
+    if (remainder != 0) {
+        if (negative)
+            str.append(1, '-');
+        else
+            str.append(1, '+');
+        str.append(remainder.get_str());
+    }
+
     return str;
 }
 
 
-bool ParseMoney(const string& str, int64& nRet)
+bool ParseMoney(const string& str, mpq& nRet)
 {
     return ParseMoney(str.c_str(), nRet);
 }
 
-bool ParseMoney(const char* pszIn, int64& nRet)
+bool ParseMoney(const char* p, mpq& nRet)
 {
-    string strWhole;
-    int64 nUnits = 0;
-    const char* p = pszIn;
+    bool fIntegerNegative = false;
+    bool fFractionNegative = false;
+    bool fDecimal = false;
+    bool fFraction = false;
+    int nUnits = 0;
+    string strInteger;
+    string strFraction;
+
     while (isspace(*p))
-        p++;
+        ++p;
+    if (*p == '-' || *p == '+')
+        if (*p++ == '-')
+            fIntegerNegative = true;
+    while (isspace(*p))
+        ++p;
+
     for (; *p; p++)
     {
+        if (isdigit(*p))
+        {
+            if (fDecimal)
+                --nUnits;
+            strInteger.append(1, *p);
+            continue;
+        }
+
         if (*p == '.')
         {
-            p++;
-            int64 nMult = CENT*10;
-            while (isdigit(*p) && (nMult > 0))
-            {
-                nUnits += nMult * (*p++ - '0');
-                nMult /= 10;
-            }
-            break;
+            if (fDecimal)
+                return false;
+            fDecimal = true;
+            continue;
         }
-        if (isspace(*p))
-            break;
-        if (!isdigit(*p))
-            return false;
-        strWhole.insert(strWhole.end(), *p);
-    }
-    for (; *p; p++)
-        if (!isspace(*p))
-            return false;
-    if (strWhole.size() > 10) // guard against 63 bit overflow
-        return false;
-    if (nUnits < 0 || nUnits > COIN)
-        return false;
-    int64 nWhole = atoi64(strWhole);
-    int64 nValue = nWhole*COIN + nUnits;
 
-    nRet = nValue;
+        if (isspace(*p))
+            continue;
+
+        break;
+    }
+
+    size_t nZeroPrefix = strInteger.find_first_not_of('0');
+    if ( nZeroPrefix && nZeroPrefix!=strInteger.length() )
+        strInteger.erase(0, nZeroPrefix);
+
+    if (!strInteger.length())
+        return false;
+
+    if (*p)
+    {
+        if (*p == '-' || *p == '+')
+            if (*p++ == '-')
+                fFractionNegative = true;
+
+        for (; *p; p++)
+        {
+            if (isdigit(*p))
+            {
+                strFraction.append(1, *p);
+                continue;
+            }
+
+            if (*p == '/')
+            {
+                if (fFraction)
+                    return false;
+                fFraction = true;
+                strFraction.append(1, *p);
+                continue;
+            }
+
+            if (isspace(*p))
+                continue;
+
+            return false;
+        }
+
+        if (!strFraction.length())
+            return false;
+        if (!isdigit(strFraction[0]))
+            return false;
+        if (!isdigit(strFraction[strFraction.length()-1]))
+            return false;
+
+        if (!fFraction)
+            return false;
+    } else {
+        strFraction = string("0/1");
+    }
+
+    mpq qUnits = mpq(string("1/1") + string(-nUnits, '0'));
+    mpq qInteger = mpq(strInteger) * qUnits;
+    mpq qFraction = mpq(strFraction) * qUnits;
+
+    nRet = (qInteger + qFraction) * COIN;
     return true;
 }
 
-// safeChars chosen to allow simple messages/URLs/email addresses, but avoid anything
-// even possibly remotely dangerous like & or >
-static string safeChars("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890 .,;_/:?@");
-string SanitizeString(const string& str)
+mpq RoundAbsolute(const mpq &q, int mode, int magnitude)
 {
-    string strResult;
-    for (std::string::size_type i = 0; i < str.size(); i++)
-    {
-        if (safeChars.find(str[i]) != std::string::npos)
-            strResult.push_back(str[i]);
+    mpq qUnits;
+    if (magnitude > 0)
+        qUnits = mpq(string("1") + string(magnitude, '0') + string("/1"));
+    else
+        qUnits = mpq(string("1/1") + string(-magnitude, '0'));
+
+    const mpq qOffset = q / qUnits;
+    const mpz quotient = qOffset.get_num() / qOffset.get_den();
+    const mpz remainder = qOffset.get_num() % qOffset.get_den();
+    const mpz remainder_times_two = abs(remainder) * 2;
+
+    bool ret_next;
+    switch (mode) {
+    case ROUND_TIES_TO_EVEN:
+        if (remainder_times_two < qOffset.get_den())
+            ret_next = false;
+        else if (remainder_times_two > qOffset.get_den())
+            ret_next = true;
+        else if (mpz_even_p(quotient.get_mpz_t()))
+            ret_next = false;
+        else
+            ret_next = true;
+        break;
+    case ROUND_TOWARDS_ZERO:
+        ret_next = false;
+        break;
+    case ROUND_AWAY_FROM_ZERO:
+        ret_next = (remainder != 0);
+        break;
+    case ROUND_TOWARD_POSITIVE:
+        if (quotient > 0)
+            ret_next = (remainder != 0);
+        else
+            ret_next = false;
+        break;
+    case ROUND_TOWARD_NEGATIVE:
+        if (quotient > 0)
+            ret_next = false;
+        else
+            ret_next = (remainder != 0);
+        break;
+    case ROUND_SIGNAL:
+        if (remainder != 0)
+            throw std::runtime_error("RoundAbsolute() : non-zero remainder in ROUND_SIGNAL mode");
+        ret_next = false;
+        break;
     }
-    return strResult;
+
+    if (ret_next) {
+        if (quotient >= 0)
+            return (quotient + 1) * qUnits;
+        else
+            return (quotient - 1) * qUnits;
+    }
+    return quotient * qUnits;
 }
+
 
 static const signed char phexdigit[256] =
 { -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
@@ -995,7 +1085,7 @@ static std::string FormatException(std::exception* pex, const char* pszThread)
     char pszModule[MAX_PATH] = "";
     GetModuleFileNameA(NULL, pszModule, sizeof(pszModule));
 #else
-    const char* pszModule = "litecoin";
+    const char* pszModule = "testcoin";
 #endif
     if (pex)
         return strprintf(
@@ -1031,13 +1121,13 @@ void PrintExceptionContinue(std::exception* pex, const char* pszThread)
 boost::filesystem::path GetDefaultDataDir()
 {
     namespace fs = boost::filesystem;
-    // Windows < Vista: C:\Documents and Settings\Username\Application Data\Bitcoin
-    // Windows >= Vista: C:\Users\Username\AppData\Roaming\Bitcoin
-    // Mac: ~/Library/Application Support/Bitcoin
-    // Unix: ~/.bitcoin
+    // Windows < Vista: C:\Documents and Settings\Username\Application Data\testcoin
+    // Windows >= Vista: C:\Users\Username\AppData\Roaming\testcoin
+    // Mac: ~/Library/Application Support/testcoin
+    // Unix: ~/.testcoin
 #ifdef WIN32
     // Windows
-    return GetSpecialFolderPath(CSIDL_APPDATA) / "Litecoin";
+    return GetSpecialFolderPath(CSIDL_APPDATA) / "testcoin";
 #else
     fs::path pathRet;
     char* pszHome = getenv("HOME");
@@ -1049,10 +1139,10 @@ boost::filesystem::path GetDefaultDataDir()
     // Mac
     pathRet /= "Library/Application Support";
     fs::create_directory(pathRet);
-    return pathRet / "Litecoin";
+    return pathRet / "testcoin";
 #else
     // Unix
-    return pathRet / ".litecoin";
+    return pathRet / ".testcoin";
 #endif
 #endif
 }
@@ -1063,12 +1153,13 @@ const boost::filesystem::path &GetDataDir(bool fNetSpecific)
 
     static fs::path pathCached[2];
     static CCriticalSection csPathCached;
+    static bool cachedPath[2] = {false, false};
 
     fs::path &path = pathCached[fNetSpecific];
 
     // This can be called during exceptions by printf, so we cache the
     // value so we don't have to do memory allocations after that.
-    if (fCachedPath[fNetSpecific])
+    if (cachedPath[fNetSpecific])
         return path;
 
     LOCK(csPathCached);
@@ -1083,17 +1174,17 @@ const boost::filesystem::path &GetDataDir(bool fNetSpecific)
         path = GetDefaultDataDir();
     }
     if (fNetSpecific && GetBoolArg("-testnet", false))
-        path /= "testnet3";
+        path /= "testnet";
 
-    fs::create_directories(path);
+    fs::create_directory(path);
 
-    fCachedPath[fNetSpecific] = true;
+    cachedPath[fNetSpecific]=true;
     return path;
 }
 
 boost::filesystem::path GetConfigFile()
 {
-    boost::filesystem::path pathConfigFile(GetArg("-conf", "litecoin.conf"));
+    boost::filesystem::path pathConfigFile(GetArg("-conf", "testcoin.conf"));
     if (!pathConfigFile.is_complete()) pathConfigFile = GetDataDir(false) / pathConfigFile;
     return pathConfigFile;
 }
@@ -1103,17 +1194,14 @@ void ReadConfigFile(map<string, string>& mapSettingsRet,
 {
     boost::filesystem::ifstream streamConfig(GetConfigFile());
     if (!streamConfig.good())
-        return; // No bitcoin.conf file is OK
-
-    // clear path cache after loading config file
-    fCachedPath[0] = fCachedPath[1] = false;
+        return; // No testcoin.conf file is OK
 
     set<string> setOptions;
     setOptions.insert("*");
 
     for (boost::program_options::detail::config_file_iterator it(streamConfig, setOptions), end; it != end; ++it)
     {
-        // Don't overwrite existing settings so command line settings override bitcoin.conf
+        // Don't overwrite existing settings so command line settings override testcoin.conf
         string strKey = string("-") + it->string_key;
         if (mapSettingsRet.count(strKey) == 0)
         {
@@ -1127,12 +1215,11 @@ void ReadConfigFile(map<string, string>& mapSettingsRet,
 
 boost::filesystem::path GetPidFile()
 {
-    boost::filesystem::path pathPidFile(GetArg("-pid", "litecoind.pid"));
+    boost::filesystem::path pathPidFile(GetArg("-pid", "testcoind.pid"));
     if (!pathPidFile.is_complete()) pathPidFile = GetDataDir() / pathPidFile;
     return pathPidFile;
 }
 
-#ifndef WIN32
 void CreatePidFile(const boost::filesystem::path &path, pid_t pid)
 {
     FILE* file = fopen(path.string().c_str(), "w");
@@ -1142,7 +1229,6 @@ void CreatePidFile(const boost::filesystem::path &path, pid_t pid)
         fclose(file);
     }
 }
-#endif
 
 bool RenameOver(boost::filesystem::path src, boost::filesystem::path dest)
 {
@@ -1163,8 +1249,6 @@ void FileCommit(FILE *fileout)
 #else
     #if defined(__linux__) || defined(__NetBSD__)
     fdatasync(fileno(fileout));
-    #elif defined(__APPLE__) && defined(F_FULLFSYNC)
-    fcntl(fileno(fileout), F_FULLFSYNC, 0);
     #else
     fsync(fileno(fileout));
     #endif
@@ -1179,80 +1263,6 @@ int GetFilesize(FILE* file)
         nFilesize = ftell(file);
     fseek(file, nSavePos, SEEK_SET);
     return nFilesize;
-}
-
-bool TruncateFile(FILE *file, unsigned int length) {
-#if defined(WIN32)
-    return _chsize(_fileno(file), length) == 0;
-#else
-    return ftruncate(fileno(file), length) == 0;
-#endif
-}
-
-
-// this function tries to raise the file descriptor limit to the requested number.
-// It returns the actual file descriptor limit (which may be more or less than nMinFD)
-int RaiseFileDescriptorLimit(int nMinFD) {
-#if defined(WIN32)
-    return 2048;
-#else
-    struct rlimit limitFD;
-    if (getrlimit(RLIMIT_NOFILE, &limitFD) != -1) {
-        if (limitFD.rlim_cur < (rlim_t)nMinFD) {
-            limitFD.rlim_cur = nMinFD;
-            if (limitFD.rlim_cur > limitFD.rlim_max)
-                limitFD.rlim_cur = limitFD.rlim_max;
-            setrlimit(RLIMIT_NOFILE, &limitFD);
-            getrlimit(RLIMIT_NOFILE, &limitFD);
-        }
-        return limitFD.rlim_cur;
-    }
-    return nMinFD; // getrlimit failed, assume it's fine
-#endif
-}
-
-// this function tries to make a particular range of a file allocated (corresponding to disk space)
-// it is advisory, and the range specified in the arguments will never contain live data
-void AllocateFileRange(FILE *file, unsigned int offset, unsigned int length) {
-#if defined(WIN32)
-    // Windows-specific version
-    HANDLE hFile = (HANDLE)_get_osfhandle(_fileno(file));
-    LARGE_INTEGER nFileSize;
-    int64 nEndPos = (int64)offset + length;
-    nFileSize.u.LowPart = nEndPos & 0xFFFFFFFF;
-    nFileSize.u.HighPart = nEndPos >> 32;
-    SetFilePointerEx(hFile, nFileSize, 0, FILE_BEGIN);
-    SetEndOfFile(hFile);
-#elif defined(MAC_OSX)
-    // OSX specific version
-    fstore_t fst;
-    fst.fst_flags = F_ALLOCATECONTIG;
-    fst.fst_posmode = F_PEOFPOSMODE;
-    fst.fst_offset = 0;
-    fst.fst_length = (off_t)offset + length;
-    fst.fst_bytesalloc = 0;
-    if (fcntl(fileno(file), F_PREALLOCATE, &fst) == -1) {
-        fst.fst_flags = F_ALLOCATEALL;
-        fcntl(fileno(file), F_PREALLOCATE, &fst);
-    }
-    ftruncate(fileno(file), fst.fst_length);
-#elif defined(__linux__)
-    // Version using posix_fallocate
-    off_t nEndPos = (off_t)offset + length;
-    posix_fallocate(fileno(file), 0, nEndPos);
-#else
-    // Fallback version
-    // TODO: just write one byte per block
-    static const char buf[65536] = {};
-    fseek(file, offset, SEEK_SET);
-    while (length > 0) {
-        unsigned int now = 65536;
-        if (length < now)
-            now = length;
-        fwrite(buf, 1, now, file); // allowed to fail; this function is advisory anyway
-        length -= now;
-    }
-#endif
 }
 
 void ShrinkDebugFile()
@@ -1275,8 +1285,6 @@ void ShrinkDebugFile()
             fclose(file);
         }
     }
-    else if(file != NULL)
-	     fclose(file);
 }
 
 
@@ -1309,14 +1317,9 @@ void SetMockTime(int64 nMockTimeIn)
 
 static int64 nTimeOffset = 0;
 
-int64 GetTimeOffset()
-{
-    return nTimeOffset;
-}
-
 int64 GetAdjustedTime()
 {
-    return GetTime() + GetTimeOffset();
+    return GetTime() + nTimeOffset;
 }
 
 void AddTimeData(const CNetAddr& ip, int64 nTime)
@@ -1336,7 +1339,7 @@ void AddTimeData(const CNetAddr& ip, int64 nTime)
         int64 nMedian = vTimeOffsets.median();
         std::vector<int64> vSorted = vTimeOffsets.sorted();
         // Only let other nodes change our time by so much
-        if (abs64(nMedian) < 35 * 60) // Litecoin: changed maximum adjust to 35 mins to avoid letting peers change our time too much in case of an attack.
+        if (abs64(nMedian) < 70 * 60)
         {
             nTimeOffset = nMedian;
         }
@@ -1356,10 +1359,10 @@ void AddTimeData(const CNetAddr& ip, int64 nTime)
                 if (!fMatch)
                 {
                     fDone = true;
-                    string strMessage = _("Warning: Please check that your computer's date and time are correct! If your clock is wrong Litecoin will not work properly.");
+                    string strMessage = _("Warning: Please check that your computer's date and time are correct! If your clock is wrong testcoin will not work properly.");
                     strMiscWarning = strMessage;
                     printf("*** %s\n", strMessage.c_str());
-                    uiInterface.ThreadSafeMessageBox(strMessage, "", CClientUIInterface::MSG_WARNING);
+                    uiInterface.ThreadSafeMessageBox(strMessage+" ", string("testcoin"), CClientUIInterface::OK | CClientUIInterface::ICON_EXCLAMATION);
                 }
             }
         }
@@ -1372,26 +1375,12 @@ void AddTimeData(const CNetAddr& ip, int64 nTime)
     }
 }
 
-uint32_t insecure_rand_Rz = 11;
-uint32_t insecure_rand_Rw = 11;
-void seed_insecure_rand(bool fDeterministic)
-{
-    //The seed values have some unlikely fixed points which we avoid.
-    if(fDeterministic)
-    {
-        insecure_rand_Rz = insecure_rand_Rw = 11;
-    } else {
-        uint32_t tmp;
-        do {
-            RAND_bytes((unsigned char*)&tmp, 4);
-        } while(tmp == 0 || tmp == 0x9068ffffU);
-        insecure_rand_Rz = tmp;
-        do {
-            RAND_bytes((unsigned char*)&tmp, 4);
-        } while(tmp == 0 || tmp == 0x464fffffU);
-        insecure_rand_Rw = tmp;
-    }
-}
+
+
+
+
+
+
 
 string FormatVersion(int nVersion)
 {
@@ -1435,28 +1424,6 @@ boost::filesystem::path GetSpecialFolderPath(int nFolder, bool fCreate)
 }
 #endif
 
-boost::filesystem::path GetTempPath() {
-#if BOOST_FILESYSTEM_VERSION == 3
-    return boost::filesystem::temp_directory_path();
-#else
-    // TODO: remove when we don't support filesystem v2 anymore
-    boost::filesystem::path path;
-#ifdef WIN32
-    char pszPath[MAX_PATH] = "";
-
-    if (GetTempPathA(MAX_PATH, pszPath))
-        path = boost::filesystem::path(pszPath);
-#else
-    path = boost::filesystem::path("/tmp");
-#endif
-    if (path.empty() || !boost::filesystem::is_directory(path)) {
-        printf("GetTempPath(): failed to find temp path\n");
-        return boost::filesystem::path("");
-    }
-    return path;
-#endif
-}
-
 void runCommand(std::string strCommand)
 {
     int nErr = ::system(strCommand.c_str());
@@ -1475,12 +1442,9 @@ void RenameThread(const char* name)
     //       removed.
     pthread_set_name_np(pthread_self(), name);
 
-#elif defined(MAC_OSX) && defined(__MAC_OS_X_VERSION_MAX_ALLOWED)
-
-// pthread_setname_np is XCode 10.6-and-later
-#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 1060
-    pthread_setname_np(name);
-#endif
+// This is XCode 10.6-and-later; bring back if we drop 10.5 support:
+// #elif defined(MAC_OSX)
+//    pthread_setname_np(name);
 
 #else
     // Prevent warnings for unused parameters...
