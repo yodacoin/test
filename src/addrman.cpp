@@ -187,7 +187,7 @@ int CAddrMan::ShrinkNew(int nUBucket)
     }
     assert(mapInfo.count(nOldest) == 1);
     CAddrInfo &info = mapInfo[nOldest];
-    if (--info.nRefCount == 0)
+    if (--info.nRefCount == 0) 
     {
         SwapRandom(info.nRandomPos, vRandom.size()-1);
         vRandom.pop_back();
@@ -236,12 +236,12 @@ void CAddrMan::MakeTried(CAddrInfo& info, int nId, int nOrigin)
     std::set<int> &vNew = vvNew[nUBucket];
 
     // remove the to-be-replaced tried entry from the tried set
-    CAddrInfo& infoOld = mapInfo[vTried[nPos]];
-    infoOld.fInTried = false;
-    infoOld.nRefCount = 1;
+    CAddrInfo& inYoCld = mapInfo[vTried[nPos]];
+    inYoCld.fInTried = false;
+    inYoCld.nRefCount = 1;
     // do not update nTried, as we are going to move something else there immediately
 
-    // check whether there is place in that one,
+    // check whether there is place in that one, 
     if (vNew.size() < ADDRMAN_NEW_BUCKET_SIZE)
     {
         // if so, move it back there
@@ -410,7 +410,7 @@ CAddress CAddrMan::Select_(int nUnkBias)
             fChanceFactor *= 1.2;
         }
     } else {
-        // use a new node
+        // use an new node
         double fChanceFactor = 1.0;
         while(1)
         {

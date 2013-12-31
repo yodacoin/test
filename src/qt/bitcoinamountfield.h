@@ -1,5 +1,5 @@
-#ifndef BITCOINAMOUNTFIELD_H
-#define BITCOINAMOUNTFIELD_H
+#ifndef BITCOINFIELD_H
+#define BITCOINFIELD_H
 
 #include <QWidget>
 
@@ -13,9 +13,7 @@ QT_END_NAMESPACE
 class BitcoinAmountField: public QWidget
 {
     Q_OBJECT
-
     Q_PROPERTY(qint64 value READ value WRITE setValue NOTIFY textChanged USER true)
-
 public:
     explicit BitcoinAmountField(QWidget *parent = 0);
 
@@ -33,7 +31,7 @@ public:
     /** Make field empty and ready for new input. */
     void clear();
 
-    /** Qt messes up the tab chain by default in some cases (issue https://bugreports.qt-project.org/browse/QTBUG-10907),
+    /** Qt messes up the tab chain by default in some cases (issue http://bugreports.qt.nokia.com/browse/QTBUG-10907),
         in these cases we have to set it up manually.
     */
     QWidget *setupTabChain(QWidget *prev);
@@ -42,7 +40,7 @@ signals:
     void textChanged();
 
 protected:
-    /** Intercept focus-in event and ',' key presses */
+    /** Intercept focus-in event and ',' keypresses */
     bool eventFilter(QObject *object, QEvent *event);
 
 private:
@@ -58,4 +56,5 @@ private slots:
 
 };
 
-#endif // BITCOINAMOUNTFIELD_H
+
+#endif // BITCOINFIELD_H

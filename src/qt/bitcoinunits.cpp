@@ -34,9 +34,9 @@ QString BitcoinUnits::name(int unit)
 {
     switch(unit)
     {
-    case BTC: return QString("LTC");
-    case mBTC: return QString("mLTC");
-    case uBTC: return QString::fromUtf8("μLTC");
+    case BTC: return QString("GEO");
+    case mBTC: return QString("mGEO");
+    case uBTC: return QString::fromUtf8("μGEO");
     default: return QString("???");
     }
 }
@@ -45,13 +45,13 @@ QString BitcoinUnits::description(int unit)
 {
     switch(unit)
     {
-    case BTC: return QString("Litecoins");
-    case mBTC: return QString("Milli-Litecoins (1 / 1,000)");
-    case uBTC: return QString("Micro-Litecoins (1 / 1,000,000)");
+    case BTC: return QString("YodaCoin");
+    case mBTC: return QString("milliYodaCoin (1 / 1,000)");
+    case uBTC: return QString("microYodaCoin (1 / 1,000,000)");
     default: return QString("???");
     }
 }
-
+//a single unit (.00000001) of YodaCoin is called a "wander."
 qint64 BitcoinUnits::factor(int unit)
 {
     switch(unit)
@@ -99,7 +99,7 @@ QString BitcoinUnits::format(int unit, qint64 n, bool fPlus)
     QString quotient_str = QString::number(quotient);
     QString remainder_str = QString::number(remainder).rightJustified(num_decimals, '0');
 
-    // Right-trim excess zeros after the decimal point
+    // Right-trim excess 0's after the decimal point
     int nTrim = 0;
     for (int i = remainder_str.size()-1; i>=2 && (remainder_str.at(i) == '0'); --i)
         ++nTrim;

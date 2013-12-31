@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>testcoin - Debug window</string>
+   <string>YodaCoin - Debug window</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_2">
    <item>
@@ -36,7 +36,7 @@
           </font>
          </property>
          <property name="text">
-          <string>testcoin Core</string>
+          <string>Bitcoin Core</string>
          </property>
         </widget>
        </item>
@@ -315,14 +315,14 @@
           </font>
          </property>
          <property name="text">
-          <string>Debug log file</string>
+          <string>Debug logfile</string>
          </property>
         </widget>
        </item>
        <item row="15" column="0">
         <widget class="QPushButton" name="openDebugLogfileButton">
          <property name="toolTip">
-          <string>Open the testcoin debug log file from the current data directory. This can take a few seconds for large log files.</string>
+          <string>Open the YodaCoin debug logfile from the current data directory. This can take a few seconds for large logfiles.</string>
          </property>
          <property name="text">
           <string>&amp;Open</string>
@@ -348,10 +348,13 @@
        <item row="17" column="0">
         <widget class="QPushButton" name="showCLOptionsButton">
          <property name="toolTip">
-          <string>Show the testcoin-Qt help message to get a list with possible testcoin command-line options.</string>
+          <string>Show the YodaCoin-qt help message to get a list with possible command-line options.</string>
          </property>
          <property name="text">
           <string>&amp;Show</string>
+         </property>
+         <property name="autoDefault">
+          <bool>false</bool>
          </property>
          <property name="autoDefault">
           <bool>false</bool>
@@ -430,7 +433,7 @@
             <string/>
            </property>
            <property name="icon">
-            <iconset resource="../testcoin.qrc">
+            <iconset resource="../bitcoin.qrc">
              <normaloff>:/icons/remove</normaloff>:/icons/remove</iconset>
            </property>
            <property name="shortcut">
@@ -450,7 +453,7 @@
   </layout>
  </widget>
  <resources>
-  <include location="../testcoin.qrc"/>
+  <include location="../bitcoin.qrc"/>
  </resources>
  <connections/>
 </ui>

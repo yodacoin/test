@@ -1,15 +1,15 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
+// Copyright (c) 2011-2012 Litecoin Developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "util.h"
 #include "sync.h"
+#include "strlcpy.h"
 #include "version.h"
 #include "ui_interface.h"
 #include <boost/algorithm/string/join.hpp>
-#include <boost/algorithm/string/case_conv.hpp> // for to_lower()
-#include <boost/algorithm/string/predicate.hpp> // for startswith() and endswith()
 
 // Work around clang compilation problem in Boost 1.46:
 // /usr/include/boost/program_options/detail/config_file.hpp:163:17: error: call to function 'to_internal' that is neither visible in the template definition nor found by argument-dependent lookup
@@ -76,7 +76,7 @@ bool fLogTimestamps = false;
 CMedianFilter<int64> vTimeOffsets(200,0);
 bool fReopenDebugLog = false;
 
-// Init OpenSSL library multithreading support
+// Init openssl library multithreading support
 static CCriticalSection** ppmutexOpenSSL;
 void locking_callback(int mode, int i, const char* file, int line)
 {
@@ -87,15 +87,13 @@ void locking_callback(int mode, int i, const char* file, int line)
     }
 }
 
-LockedPageManager LockedPageManager::instance;
-
 // Init
 class CInit
 {
 public:
     CInit()
     {
-        // Init OpenSSL library multithreading support
+        // Init openssl library multithreading support
         ppmutexOpenSSL = (CCriticalSection**)OPENSSL_malloc(CRYPTO_num_locks() * sizeof(CCriticalSection*));
         for (int i = 0; i < CRYPTO_num_locks(); i++)
             ppmutexOpenSSL[i] = new CCriticalSection();
@@ -111,7 +109,7 @@ public:
     }
     ~CInit()
     {
-        // Shutdown OpenSSL library multithreading support
+        // Shutdown openssl library multithreading support
         CRYPTO_set_locking_callback(NULL);
         for (int i = 0; i < CRYPTO_num_locks(); i++)
             delete ppmutexOpenSSL[i];
@@ -157,7 +155,7 @@ void RandAddSeedPerfmon()
     {
         RAND_add(pdata, nSize, nSize/100.0);
         memset(pdata, 0, nSize);
-        printf("RandAddSeed() %lu bytes\n", nSize);
+        printf("RandAddSeed() %d bytes\n", nSize);
     }
 #endif
 }
@@ -207,7 +205,7 @@ inline int OutputDebugStringF(const char* pszFormat, ...)
         ret = vprintf(pszFormat, arg_ptr);
         va_end(arg_ptr);
     }
-    else if (!fPrintToDebugger)
+    else
     {
         // print to debug.log
         static FILE* fileout = NULL;
@@ -221,14 +219,8 @@ inline int OutputDebugStringF(const char* pszFormat, ...)
         if (fileout)
         {
             static bool fStartedNewLine = true;
-
-            // This routine may be called by global destructors during shutdown.
-            // Since the order of destruction of static/global objects is undefined,
-            // allocate mutexDebugLog on the heap the first time this routine
-            // is called to avoid crashes during shutdown.
-            static boost::mutex* mutexDebugLog = NULL;
-            if (mutexDebugLog == NULL) mutexDebugLog = new boost::mutex();
-            boost::mutex::scoped_lock scoped_lock(*mutexDebugLog);
+            static boost::mutex mutexDebugLog;
+            boost::mutex::scoped_lock scoped_lock(mutexDebugLog);
 
             // reopen the log file, if requested
             if (fReopenDebugLog) {
@@ -281,7 +273,7 @@ inline int OutputDebugStringF(const char* pszFormat, ...)
     return ret;
 }
 
-string vstrprintf(const char *format, va_list ap)
+string vstrprintf(const std::string &format, va_list ap)
 {
     char buffer[50000];
     char* p = buffer;
@@ -291,11 +283,7 @@ string vstrprintf(const char *format, va_list ap)
     {
         va_list arg_ptr;
         va_copy(arg_ptr, ap);
-#ifdef WIN32
-        ret = _vsnprintf(p, limit, format, arg_ptr);
-#else
-        ret = vsnprintf(p, limit, format, arg_ptr);
-#endif
+        ret = _vsnprintf(p, limit, format.c_str(), arg_ptr);
         va_end(arg_ptr);
         if (ret >= 0 && ret < limit)
             break;
@@ -312,20 +300,11 @@ string vstrprintf(const char *format, va_list ap)
     return str;
 }
 
-string real_strprintf(const char *format, int dummy, ...)
-{
-    va_list arg_ptr;
-    va_start(arg_ptr, dummy);
-    string str = vstrprintf(format, arg_ptr);
-    va_end(arg_ptr);
-    return str;
-}
-
 string real_strprintf(const std::string &format, int dummy, ...)
 {
     va_list arg_ptr;
     va_start(arg_ptr, dummy);
-    string str = vstrprintf(format.c_str(), arg_ptr);
+    string str = vstrprintf(format, arg_ptr);
     va_end(arg_ptr);
     return str;
 }
@@ -363,203 +342,75 @@ void ParseString(const string& str, char c, vector<string>& v)
 
 string FormatMoney(int64 n, bool fPlus)
 {
-    return FormatMoney(i64_to_mpz(n), fPlus);
-}
+    // Note: not using straight sprintf here because we do NOT want
+    // localized number formatting.
+    int64 n_abs = (n > 0 ? n : -n);
+    int64 quotient = n_abs/COIN;
+    int64 remainder = n_abs%COIN;
+    string str = strprintf("%"PRI64d".%08"PRI64d, quotient, remainder);
 
-string FormatMoney(const mpq &q, bool fPlus)
-{
-    const bool negative = q < 0;
-    const mpq q_abs = abs(q);
-    const mpz integer = q_abs.get_num() / q_abs.get_den();
-    const mpq remainder = q_abs - integer;
+    // Right-trim excess 0's before the decimal point:
+    int nTrim = 0;
+    for (int i = str.size()-1; (str[i] == '0' && isdigit(str[i-2])); --i)
+        ++nTrim;
+    if (nTrim)
+        str.erase(str.size()-nTrim, nTrim);
 
-    string str = integer.get_str();
-    if (str.length() < 9)
-        str.insert((unsigned int)0, 9-str.length(), '0');
-    str.insert(str.length()-8, 1, '.');
-
-    if (negative)
+    if (n < 0)
         str.insert((unsigned int)0, 1, '-');
-    else if (fPlus && q > 0)
+    else if (fPlus && n > 0)
         str.insert((unsigned int)0, 1, '+');
-
-    if (remainder != 0) {
-        if (negative)
-            str.append(1, '-');
-        else
-            str.append(1, '+');
-        str.append(remainder.get_str());
-    }
-
     return str;
 }
 
 
-bool ParseMoney(const string& str, mpq& nRet)
+bool ParseMoney(const string& str, int64& nRet)
 {
     return ParseMoney(str.c_str(), nRet);
 }
 
-bool ParseMoney(const char* p, mpq& nRet)
+bool ParseMoney(const char* pszIn, int64& nRet)
 {
-    bool fIntegerNegative = false;
-    bool fFractionNegative = false;
-    bool fDecimal = false;
-    bool fFraction = false;
-    int nUnits = 0;
-    string strInteger;
-    string strFraction;
-
+    string strWhole;
+    int64 nUnits = 0;
+    const char* p = pszIn;
     while (isspace(*p))
-        ++p;
-    if (*p == '-' || *p == '+')
-        if (*p++ == '-')
-            fIntegerNegative = true;
-    while (isspace(*p))
-        ++p;
-
+        p++;
     for (; *p; p++)
     {
-        if (isdigit(*p))
-        {
-            if (fDecimal)
-                --nUnits;
-            strInteger.append(1, *p);
-            continue;
-        }
-
         if (*p == '.')
         {
-            if (fDecimal)
-                return false;
-            fDecimal = true;
-            continue;
+            p++;
+            int64 nMult = CENT*10;
+            while (isdigit(*p) && (nMult > 0))
+            {
+                nUnits += nMult * (*p++ - '0');
+                nMult /= 10;
+            }
+            break;
         }
-
         if (isspace(*p))
-            continue;
-
-        break;
+            break;
+        if (!isdigit(*p))
+            return false;
+        strWhole.insert(strWhole.end(), *p);
     }
-
-    size_t nZeroPrefix = strInteger.find_first_not_of('0');
-    if ( nZeroPrefix && nZeroPrefix!=strInteger.length() )
-        strInteger.erase(0, nZeroPrefix);
-
-    if (!strInteger.length())
+    for (; *p; p++)
+        if (!isspace(*p))
+            return false;
+    if (strWhole.size() > 10) // guard against 63 bit overflow
         return false;
+    if (nUnits < 0 || nUnits > COIN)
+        return false;
+    int64 nWhole = atoi64(strWhole);
+    int64 nValue = nWhole*COIN + nUnits;
 
-    if (*p)
-    {
-        if (*p == '-' || *p == '+')
-            if (*p++ == '-')
-                fFractionNegative = true;
-
-        for (; *p; p++)
-        {
-            if (isdigit(*p))
-            {
-                strFraction.append(1, *p);
-                continue;
-            }
-
-            if (*p == '/')
-            {
-                if (fFraction)
-                    return false;
-                fFraction = true;
-                strFraction.append(1, *p);
-                continue;
-            }
-
-            if (isspace(*p))
-                continue;
-
-            return false;
-        }
-
-        if (!strFraction.length())
-            return false;
-        if (!isdigit(strFraction[0]))
-            return false;
-        if (!isdigit(strFraction[strFraction.length()-1]))
-            return false;
-
-        if (!fFraction)
-            return false;
-    } else {
-        strFraction = string("0/1");
-    }
-
-    mpq qUnits = mpq(string("1/1") + string(-nUnits, '0'));
-    mpq qInteger = mpq(strInteger) * qUnits;
-    mpq qFraction = mpq(strFraction) * qUnits;
-
-    nRet = (qInteger + qFraction) * COIN;
+    nRet = nValue;
     return true;
 }
 
-mpq RoundAbsolute(const mpq &q, int mode, int magnitude)
-{
-    mpq qUnits;
-    if (magnitude > 0)
-        qUnits = mpq(string("1") + string(magnitude, '0') + string("/1"));
-    else
-        qUnits = mpq(string("1/1") + string(-magnitude, '0'));
 
-    const mpq qOffset = q / qUnits;
-    const mpz quotient = qOffset.get_num() / qOffset.get_den();
-    const mpz remainder = qOffset.get_num() % qOffset.get_den();
-    const mpz remainder_times_two = abs(remainder) * 2;
-
-    bool ret_next;
-    switch (mode) {
-    case ROUND_TIES_TO_EVEN:
-        if (remainder_times_two < qOffset.get_den())
-            ret_next = false;
-        else if (remainder_times_two > qOffset.get_den())
-            ret_next = true;
-        else if (mpz_even_p(quotient.get_mpz_t()))
-            ret_next = false;
-        else
-            ret_next = true;
-        break;
-    case ROUND_TOWARDS_ZERO:
-        ret_next = false;
-        break;
-    case ROUND_AWAY_FROM_ZERO:
-        ret_next = (remainder != 0);
-        break;
-    case ROUND_TOWARD_POSITIVE:
-        if (quotient > 0)
-            ret_next = (remainder != 0);
-        else
-            ret_next = false;
-        break;
-    case ROUND_TOWARD_NEGATIVE:
-        if (quotient > 0)
-            ret_next = false;
-        else
-            ret_next = (remainder != 0);
-        break;
-    case ROUND_SIGNAL:
-        if (remainder != 0)
-            throw std::runtime_error("RoundAbsolute() : non-zero remainder in ROUND_SIGNAL mode");
-        ret_next = false;
-        break;
-    }
-
-    if (ret_next) {
-        if (quotient >= 0)
-            return (quotient + 1) * qUnits;
-        else
-            return (quotient - 1) * qUnits;
-    }
-    return quotient * qUnits;
-}
-
-
-static const signed char phexdigit[256] =
+static signed char phexdigit[256] =
 { -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
   -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
   -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
@@ -615,7 +466,7 @@ vector<unsigned char> ParseHex(const string& str)
 
 static void InterpretNegativeSetting(string name, map<string, string>& mapSettingsRet)
 {
-    // interpret -nofoo as -foo=0 (and -nofoo=0 as -foo=1) as long as -foo not set
+    // interpret -noYoC as -YoC=0 (and -noYoC=0 as -YoC=1) as long as -YoC not set
     if (name.find("-no") == 0)
     {
         std::string positive("-");
@@ -634,24 +485,24 @@ void ParseParameters(int argc, const char* const argv[])
     mapMultiArgs.clear();
     for (int i = 1; i < argc; i++)
     {
-        std::string str(argv[i]);
-        std::string strValue;
-        size_t is_index = str.find('=');
-        if (is_index != std::string::npos)
+        char psz[10000];
+        strlcpy(psz, argv[i], sizeof(psz));
+        char* pszValue = (char*)"";
+        if (strchr(psz, '='))
         {
-            strValue = str.substr(is_index+1);
-            str = str.substr(0, is_index);
+            pszValue = strchr(psz, '=');
+            *pszValue++ = '\0';
         }
-#ifdef WIN32
-        boost::to_lower(str);
-        if (boost::algorithm::starts_with(str, "/"))
-            str = "-" + str.substr(1);
-#endif
-        if (str[0] != '-')
+        #ifdef WIN32
+        _strlwr(psz);
+        if (psz[0] == '/')
+            psz[0] = '-';
+        #endif
+        if (psz[0] != '-')
             break;
 
-        mapArgs[str] = strValue;
-        mapMultiArgs[str].push_back(strValue);
+        mapArgs[psz] = pszValue;
+        mapMultiArgs[psz].push_back(pszValue);
     }
 
     // New 0.6 features:
@@ -659,7 +510,7 @@ void ParseParameters(int argc, const char* const argv[])
     {
         string name = entry.first;
 
-        //  interpret --foo as -foo (as long as both are not set)
+        //  interpret --YoC as -YoC (as long as both are not set)
         if (name.find("--") == 0)
         {
             std::string singleDash(name.begin()+1, name.end());
@@ -668,7 +519,7 @@ void ParseParameters(int argc, const char* const argv[])
             name = singleDash;
         }
 
-        // interpret -nofoo as -foo=0 (and -nofoo=0 as -foo=1) as long as -foo not set
+        // interpret -noYoC as -YoC=0 (and -noYoC=0 as -YoC=1) as long as -YoC not set
         InterpretNegativeSetting(name, mapArgs);
     }
 }
@@ -1085,7 +936,7 @@ static std::string FormatException(std::exception* pex, const char* pszThread)
     char pszModule[MAX_PATH] = "";
     GetModuleFileNameA(NULL, pszModule, sizeof(pszModule));
 #else
-    const char* pszModule = "testcoin";
+    const char* pszModule = "YodaCoin";
 #endif
     if (pex)
         return strprintf(
@@ -1121,13 +972,13 @@ void PrintExceptionContinue(std::exception* pex, const char* pszThread)
 boost::filesystem::path GetDefaultDataDir()
 {
     namespace fs = boost::filesystem;
-    // Windows < Vista: C:\Documents and Settings\Username\Application Data\testcoin
-    // Windows >= Vista: C:\Users\Username\AppData\Roaming\testcoin
-    // Mac: ~/Library/Application Support/testcoin
-    // Unix: ~/.testcoin
+    // Windows < Vista: C:\Documents and Settings\Username\Application Data\YodaCoin
+    // Windows >= Vista: C:\Users\Username\AppData\Roaming\YodaCoin
+    // Mac: ~/Library/Application Support/YodaCoin
+    // Unix: ~/.YodaCoin
 #ifdef WIN32
     // Windows
-    return GetSpecialFolderPath(CSIDL_APPDATA) / "testcoin";
+    return GetSpecialFolderPath(CSIDL_APPDATA) / "YodaCoin";
 #else
     fs::path pathRet;
     char* pszHome = getenv("HOME");
@@ -1139,10 +990,10 @@ boost::filesystem::path GetDefaultDataDir()
     // Mac
     pathRet /= "Library/Application Support";
     fs::create_directory(pathRet);
-    return pathRet / "testcoin";
+    return pathRet / "YodaCoin";
 #else
     // Unix
-    return pathRet / ".testcoin";
+    return pathRet / ".YodaCoin";
 #endif
 #endif
 }
@@ -1174,7 +1025,7 @@ const boost::filesystem::path &GetDataDir(bool fNetSpecific)
         path = GetDefaultDataDir();
     }
     if (fNetSpecific && GetBoolArg("-testnet", false))
-        path /= "testnet";
+        path /= "testnet3";
 
     fs::create_directory(path);
 
@@ -1184,7 +1035,7 @@ const boost::filesystem::path &GetDataDir(bool fNetSpecific)
 
 boost::filesystem::path GetConfigFile()
 {
-    boost::filesystem::path pathConfigFile(GetArg("-conf", "testcoin.conf"));
+    boost::filesystem::path pathConfigFile(GetArg("-conf", "YodaCoin.conf"));
     if (!pathConfigFile.is_complete()) pathConfigFile = GetDataDir(false) / pathConfigFile;
     return pathConfigFile;
 }
@@ -1194,19 +1045,19 @@ void ReadConfigFile(map<string, string>& mapSettingsRet,
 {
     boost::filesystem::ifstream streamConfig(GetConfigFile());
     if (!streamConfig.good())
-        return; // No testcoin.conf file is OK
+        return; // No YodaCoin.conf file is OK
 
     set<string> setOptions;
     setOptions.insert("*");
 
     for (boost::program_options::detail::config_file_iterator it(streamConfig, setOptions), end; it != end; ++it)
     {
-        // Don't overwrite existing settings so command line settings override testcoin.conf
+        // Don't overwrite existing settings so command line settings override YodaCoin.conf
         string strKey = string("-") + it->string_key;
         if (mapSettingsRet.count(strKey) == 0)
         {
             mapSettingsRet[strKey] = it->value[0];
-            // interpret nofoo=1 as foo=0 (and nofoo=0 as foo=1) as long as foo not set)
+            // interpret noYoC=1 as YoC=0 (and noYoC=0 as YoC=1) as long as YoC not set)
             InterpretNegativeSetting(strKey, mapSettingsRet);
         }
         mapMultiSettingsRet[strKey].push_back(it->value[0]);
@@ -1215,7 +1066,7 @@ void ReadConfigFile(map<string, string>& mapSettingsRet,
 
 boost::filesystem::path GetPidFile()
 {
-    boost::filesystem::path pathPidFile(GetArg("-pid", "testcoind.pid"));
+    boost::filesystem::path pathPidFile(GetArg("-pid", "YodaCoin.pid"));
     if (!pathPidFile.is_complete()) pathPidFile = GetDataDir() / pathPidFile;
     return pathPidFile;
 }
@@ -1247,11 +1098,7 @@ void FileCommit(FILE *fileout)
 #ifdef WIN32
     _commit(_fileno(fileout));
 #else
-    #if defined(__linux__) || defined(__NetBSD__)
-    fdatasync(fileno(fileout));
-    #else
     fsync(fileno(fileout));
-    #endif
 #endif
 }
 
@@ -1339,7 +1186,7 @@ void AddTimeData(const CNetAddr& ip, int64 nTime)
         int64 nMedian = vTimeOffsets.median();
         std::vector<int64> vSorted = vTimeOffsets.sorted();
         // Only let other nodes change our time by so much
-        if (abs64(nMedian) < 70 * 60)
+        if (abs64(nMedian) < 35 * 60) // changed maximum adjust to 35 mins to avoid letting peers change our time too much in case of an attack.
         {
             nTimeOffset = nMedian;
         }
@@ -1359,10 +1206,10 @@ void AddTimeData(const CNetAddr& ip, int64 nTime)
                 if (!fMatch)
                 {
                     fDone = true;
-                    string strMessage = _("Warning: Please check that your computer's date and time are correct! If your clock is wrong testcoin will not work properly.");
+                    string strMessage = _("Warning: Please check that your computer's date and time are correct.  If your clock is wrong YodaCoin will not work properly.");
                     strMiscWarning = strMessage;
                     printf("*** %s\n", strMessage.c_str());
-                    uiInterface.ThreadSafeMessageBox(strMessage+" ", string("testcoin"), CClientUIInterface::OK | CClientUIInterface::ICON_EXCLAMATION);
+                    uiInterface.ThreadSafeMessageBox(strMessage+" ", string("YodaCoin"), CClientUIInterface::OK | CClientUIInterface::ICON_EXCLAMATION);
                 }
             }
         }
@@ -1441,25 +1288,10 @@ void RenameThread(const char* name)
     //       on FreeBSD or OpenBSD first. When verified the '0 &&' part can be
     //       removed.
     pthread_set_name_np(pthread_self(), name);
-
-// This is XCode 10.6-and-later; bring back if we drop 10.5 support:
-// #elif defined(MAC_OSX)
-//    pthread_setname_np(name);
-
+#elif defined(MAC_OSX)
+    pthread_setname_np(name);
 #else
     // Prevent warnings for unused parameters...
     (void)name;
 #endif
-}
-
-bool NewThread(void(*pfn)(void*), void* parg)
-{
-    try
-    {
-        boost::thread(pfn, parg); // thread detaches when out of scope
-    } catch(boost::thread_resource_error &e) {
-        printf("Error creating thread: %s\n", e.what());
-        return false;
-    }
-    return true;
 }

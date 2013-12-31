@@ -1,9 +1,10 @@
 #include "guiutil.h"
-#include "testcoinaddressvalidator.h"
+#include "bitcoinaddressvalidator.h"
 #include "walletmodel.h"
-#include "testcoinunits.h"
+#include "bitcoinunits.h"
 #include "util.h"
 #include "init.h"
+#include "base58.h"
 
 #include <QString>
 #include <QDateTime>
@@ -52,7 +53,7 @@ QString dateTimeStr(qint64 nTime)
     return dateTimeStr(QDateTime::fromTime_t((qint32)nTime));
 }
 
-QFont testcoinAddressFont()
+QFont bitcoinAddressFont()
 {
     QFont font("Monospace");
     font.setStyleHint(QFont::TypeWriter);
@@ -61,9 +62,9 @@ QFont testcoinAddressFont()
 
 void setupAddressWidget(QLineEdit *widget, QWidget *parent)
 {
-    widget->setMaxLength(testcoinAddressValidator::MaxAddressLength);
-    widget->setValidator(new testcoinAddressValidator(parent));
-    widget->setFont(testcoinAddressFont());
+    widget->setMaxLength(BitcoinAddressValidator::MaxAddressLength);
+    widget->setValidator(new BitcoinAddressValidator(parent));
+    widget->setFont(bitcoinAddressFont());
 }
 
 void setupAmountWidget(QLineEdit *widget, QWidget *parent)
@@ -75,9 +76,14 @@ void setupAmountWidget(QLineEdit *widget, QWidget *parent)
     widget->setAlignment(Qt::AlignRight|Qt::AlignVCenter);
 }
 
-bool parsetestcoinURI(const QUrl &uri, SendCoinsRecipient *out)
+bool parseBitcoinURI(const QUrl &uri, SendCoinsRecipient *out)
 {
-    if(uri.scheme() != QString("testcoin"))
+    if(uri.scheme() != QString("YodaCoin"))
+        return false;
+
+    // check if the address is valid
+    CBitcoinAddress addressFromUri(uri.path().toStdString());
+    if (!addressFromUri.IsValid())
         return false;
 
     SendCoinsRecipient rv;
@@ -102,7 +108,7 @@ bool parsetestcoinURI(const QUrl &uri, SendCoinsRecipient *out)
         {
             if(!i->second.isEmpty())
             {
-                if(!testcoinUnits::parse(testcoinUnits::tsc, i->second, &rv.amount))
+                if(!BitcoinUnits::parse(BitcoinUnits::BTC, i->second, &rv.amount))
                 {
                     return false;
                 }
@@ -120,18 +126,18 @@ bool parsetestcoinURI(const QUrl &uri, SendCoinsRecipient *out)
     return true;
 }
 
-bool parsetestcoinURI(QString uri, SendCoinsRecipient *out)
+bool parseBitcoinURI(QString uri, SendCoinsRecipient *out)
 {
-    // Convert testcoin:// to testcoin:
+    // Convert YodaCoin:// to YodaCoin:
     //
-    //    Cannot handle this later, because testcoin:// will cause Qt to see the part after // as host,
-    //    which will lower-case it (and thus invalidate the address).
-    if(uri.startsWith("testcoin://"))
+    //    Cannot handle this later, because YodaCoin:// will cause Qt to see the part after // as host,
+    //    which will lowercase it (and thus invalidate the address).
+    if(uri.startsWith("YodaCoin://"))
     {
-        uri.replace(0, 10, "testcoin:");
+        uri.replace(0, 11, "YodaCoin:");
     }
     QUrl uriInstance(uri);
-    return parsetestcoinURI(uriInstance, out);
+    return parseBitcoinURI(uriInstance, out);
 }
 
 QString HtmlEscape(const QString& str, bool fMultiLine)
@@ -179,7 +185,7 @@ QString getSaveFileName(QWidget *parent, const QString &caption,
     }
     QString result = QFileDialog::getSaveFileName(parent, caption, myDir, filter, &selectedFilter);
 
-    /* Extract first suffix from filter pattern "Description (*.foo)" or "Description (*.foo *.bar ...) */
+    /* Extract first suffix from filter pattern "Description (*.YoC)" or "Description (*.YoC *.bar ...) */
     QRegExp filter_re(".* \\(\\*\\.(.*)[ \\)]");
     QString selectedSuffix;
     if(filter_re.exactMatch(selectedFilter))
@@ -272,12 +278,12 @@ bool ToolTipToRichTextFilter::eventFilter(QObject *obj, QEvent *evt)
 #ifdef WIN32
 boost::filesystem::path static StartupShortcutPath()
 {
-    return GetSpecialFolderPath(CSIDL_STARTUP) / "testcoin.lnk";
+    return GetSpecialFolderPath(CSIDL_STARTUP) / "YodaCoin.lnk";
 }
 
 bool GetStartOnSystemStartup()
 {
-    // check for testcoin.lnk
+    // check for YodaCoin.lnk
     return boost::filesystem::exists(StartupShortcutPath());
 }
 
@@ -354,7 +360,7 @@ boost::filesystem::path static GetAutostartDir()
 
 boost::filesystem::path static GetAutostartFilePath()
 {
-    return GetAutostartDir() / "testcoin.desktop";
+    return GetAutostartDir() / "YodaCoin.desktop";
 }
 
 bool GetStartOnSystemStartup()
@@ -392,10 +398,10 @@ bool SetStartOnSystemStartup(bool fAutoStart)
         boost::filesystem::ofstream optionFile(GetAutostartFilePath(), std::ios_base::out|std::ios_base::trunc);
         if (!optionFile.good())
             return false;
-        // Write a testcoin.desktop file to the autostart directory:
+        // Write a YodaCoin.desktop file to the autostart directory:
         optionFile << "[Desktop Entry]\n";
         optionFile << "Type=Application\n";
-        optionFile << "Name=testcoin\n";
+        optionFile << "Name=YodaCoin\n";
         optionFile << "Exec=" << pszExePath << " -min\n";
         optionFile << "Terminal=false\n";
         optionFile << "Hidden=false\n";
@@ -416,10 +422,10 @@ bool SetStartOnSystemStartup(bool fAutoStart) { return false; }
 HelpMessageBox::HelpMessageBox(QWidget *parent) :
     QMessageBox(parent)
 {
-    header = tr("testcoin-Qt") + " " + tr("version") + " " +
+    header = tr("YodaCoin-qt") + " " + tr("version") + " " +
         QString::fromStdString(FormatFullVersion()) + "\n\n" +
         tr("Usage:") + "\n" +
-        "  testcoin-qt [" + tr("command-line options") + "]                     " + "\n";
+        "  YodaCoin-qt [" + tr("command-line options") + "]                     " + "\n";
 
     coreOptions = QString::fromStdString(HelpMessage());
 
@@ -428,9 +434,9 @@ HelpMessageBox::HelpMessageBox(QWidget *parent) :
         "  -min                   " + tr("Start minimized") + "\n" +
         "  -splash                " + tr("Show splash screen on startup (default: 1)") + "\n";
 
-    setWindowTitle(tr("testcoin-Qt"));
+    setWindowTitle(tr("YodaCoin-qt"));
     setTextFormat(Qt::PlainText);
-    // setMinimumWidth is ignored for QMessageBox so put in non-breaking spaces to make it wider.
+    // setMinimumWidth is ignored for QMessageBox so put in nonbreaking spaces to make it wider.
     setText(header + QString(QChar(0x2003)).repeated(50));
     setDetailedText(coreOptions + "\n" + uiOptions);
 }
@@ -439,13 +445,13 @@ void HelpMessageBox::printToConsole()
 {
     // On other operating systems, the expected action is to print the message to the console.
     QString strUsage = header + "\n" + coreOptions + "\n" + uiOptions;
-    fprintf(stdout, "%s", strUsage.toStdString().c_str());
+    fprintf(stderr, "%s", strUsage.toStdString().c_str());
 }
 
 void HelpMessageBox::showOrPrint()
 {
 #if defined(WIN32)
-        // On Windows, show a message box, as there is no stderr/stdout in windowed applications
+        // On windows, show a message box, as there is no stderr/stdout in windowed applications
         exec();
 #else
         // On other operating systems, print help text to console
