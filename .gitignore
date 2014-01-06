@@ -1,7 +1,12 @@
 src/*.exe
-src/fuhcoin
-src/fuhcoind
-src/test_fuhcoin
+src/feathercoin
+src/feathercoind
+src/test_feathercoin
+src/build.h
+build
+debug
+release
+libs
 .*.swp
 *.*~*
 *.bak
@@ -9,26 +14,15 @@ src/test_fuhcoin
 *.orig
 *.o
 *.patch
-.fuhcoin
-
-# Compilation and Qt preprocessor part
+.bitcoin
+#compilation and Qt preprocessor part
 *.qm
 Makefile
-fuhcoin-qt
-fuhcoin-Qt.app
-
-# Unit-tests
-Makefile.test
-fuhcoin-qt_test
-
-# Resources cpp
+feathercoin-qt
+#resources cpp
 qrc_*.cpp
-
-# Qt creator
+#qt creator
 *.pro.user
-
-# Mac specific
+#mac specific
 .DS_Store
 build
-
-!src/leveldb-*/Makefile
