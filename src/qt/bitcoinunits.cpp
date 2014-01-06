@@ -34,9 +34,9 @@ QString BitcoinUnits::name(int unit)
 {
     switch(unit)
     {
-    case BTC: return QString("GEO");
-    case mBTC: return QString("mGEO");
-    case uBTC: return QString::fromUtf8("μGEO");
+    case BTC: return QString("FTC");
+    case mBTC: return QString("mFTC");
+    case uBTC: return QString("uFTC");
     default: return QString("???");
     }
 }
@@ -45,13 +45,13 @@ QString BitcoinUnits::description(int unit)
 {
     switch(unit)
     {
-    case BTC: return QString("YodaCoin");
-    case mBTC: return QString("milliYodaCoin (1 / 1,000)");
-    case uBTC: return QString("microYodaCoin (1 / 1,000,000)");
+    case BTC: return QString("PlatinumCoins");
+    case mBTC: return QString("Milli-PlatinumCoins (1 / 1,000)");
+    case uBTC: return QString("Micro-PlatinumCoins (1 / 1,000,000)");
     default: return QString("???");
     }
 }
-//a single unit (.00000001) of YodaCoin is called a "wander."
+
 qint64 BitcoinUnits::factor(int unit)
 {
     switch(unit)

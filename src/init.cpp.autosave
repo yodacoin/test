@@ -1,6 +1,7 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
 // Copyright (c) 2011-2012 Litecoin Developers
+// Copyright (c) 2013 PlatinumCoin Developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include "db.h"
@@ -10,6 +11,7 @@
 #include "init.h"
 #include "util.h"
 #include "ui_interface.h"
+#include "checkpointsync.h"
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/filesystem/convenience.hpp>
@@ -80,7 +82,7 @@ void Shutdown(void* parg)
         delete pwalletMain;
         CreateThread(ExitTimeout, NULL);
         Sleep(50);
-        printf("YodaCoin exited\n\n");
+        printf("PlatinumCoin exited\n\n");
         fExit = true;
 #ifndef QT_GUI
         // ensure non UI client get's exited here, but let Bitcoin-Qt reach return 0; in bitcoin.cpp
@@ -123,7 +125,7 @@ bool AppInit(int argc, char* argv[])
         //
         // Parameters
         //
-        // If Qt is used, parameters/litecoin.conf are parsed in qt/bitcoin.cpp's main()
+        // If Qt is used, parameters/PlatinumCoin.conf are parsed in qt/bitcoin.cpp's main()
         ParseParameters(argc, argv);
         if (!boost::filesystem::is_directory(GetDataDir(false)))
         {
@@ -134,13 +136,13 @@ bool AppInit(int argc, char* argv[])
 
         if (mapArgs.count("-?") || mapArgs.count("--help"))
         {
-            // First part of help message is specific to YodaCoin server / RPC client
-            std::string strUsage = _("YodaCoin version") + " " + FormatFullVersion() + "\n\n" +
+            // First part of help message is specific to PlatinumCoind / RPC client
+            std::string strUsage = _("PlatinumCoin version") + " " + FormatFullVersion() + "\n\n" +
                 _("Usage:") + "\n" +
-                  "  YodaCoin [options]                     " + "\n" +
-                  "  YodaCoin [options] <command> [params]  " + _("Send command to -server or YodaCoin") + "\n" +
-                  "  YodaCoin [options] help                " + _("List commands") + "\n" +
-                  "  YodaCoin [options] help <command>      " + _("Get help for a command") + "\n";
+                  "  PlatinumCoind [options]                     " + "\n" +
+                  "  PlatinumCoind [options] <command> [params]  " + _("Send command to -server or PlatinumCoind") + "\n" +
+                  "  PlatinumCoind [options] help                " + _("List commands") + "\n" +
+                  "  PlatinumCoind [options] help <command>      " + _("Get help for a command") + "\n";
 
             strUsage += "\n" + HelpMessage();
 
@@ -150,7 +152,7 @@ bool AppInit(int argc, char* argv[])
 
         // Command-line RPC
         for (int i = 1; i < argc; i++)
-            if (!IsSwitchChar(argv[i][0]) && !boost::algorithm::istarts_with(argv[i], "YodaCoin:"))
+            if (!IsSwitchChar(argv[i][0]) && !boost::algorithm::istarts_with(argv[i], "PlatinumCoin:"))
                 fCommandLine = true;
 
         if (fCommandLine)
@@ -176,7 +178,7 @@ int main(int argc, char* argv[])
 {
     bool fRet = false;
 
-    // Connect signal handlers
+    // Connect PlatinumCoind signal handlers
     noui_connect();
 
     fRet = AppInit(argc, argv);
@@ -190,13 +192,13 @@ int main(int argc, char* argv[])
 
 bool static InitError(const std::string &str)
 {
-    uiInterface.ThreadSafeMessageBox(str, _("YodaCoin"), CClientUIInterface::OK | CClientUIInterface::MODAL);
+    uiInterface.ThreadSafeMessageBox(str, _("PlatinumCoin"), CClientUIInterface::OK | CClientUIInterface::MODAL);
     return false;
 }
 
 bool static InitWarning(const std::string &str)
 {
-    uiInterface.ThreadSafeMessageBox(str, _("YodaCoin"), CClientUIInterface::OK | CClientUIInterface::ICON_EXCLAMATION | CClientUIInterface::MODAL);
+    uiInterface.ThreadSafeMessageBox(str, _("PlatinumCoin"), CClientUIInterface::OK | CClientUIInterface::ICON_EXCLAMATION | CClientUIInterface::MODAL);
     return true;
 }
 
@@ -213,15 +215,12 @@ bool static Bind(const CService &addr, bool fError = true) {
     return true;
 }
 
-/* import from bitcoinrpc.cpp */
-extern double GetDifficulty(const CBlockIndex* blockindex = NULL);
-
 // Core-specific options shared between UI and daemon
 std::string HelpMessage()
 {
     string strUsage = _("Options:") + "\n" +
-        "  -conf=<file>           " + _("Specify configuration file (default: YodaCoin.conf)") + "\n" +
-        "  -pid=<file>            " + _("Specify pid file (default: YodaCoin.pid)") + "\n" +
+        "  -conf=<file>           " + _("Specify configuration file (default: PlatinumCoin.conf)") + "\n" +
+        "  -pid=<file>            " + _("Specify pid file (default: PlatinumCoind.pid)") + "\n" +
         "  -gen                   " + _("Generate coins") + "\n" +
         "  -gen=0                 " + _("Don't generate coins") + "\n" +
         "  -datadir=<dir>         " + _("Specify data directory") + "\n" +
@@ -232,7 +231,7 @@ std::string HelpMessage()
         "  -socks=<n>             " + _("Select the version of socks proxy to use (4-5, default: 5)") + "\n" +
         "  -tor=<ip:port>         " + _("Use proxy to reach tor hidden services (default: same as -proxy)") + "\n"
         "  -dns                   " + _("Allow DNS lookups for -addnode, -seednode and -connect") + "\n" +
-        "  -port=<port>           " + _("Listen for connections on <port> (default: 558832 or testnet: 45884)") + "\n" +
+        "  -port=<port>           " + _("Listen for connections on <port> (default: 19878 or testnet: 19899)") + "\n" +
         "  -maxconnections=<n>    " + _("Maintain at most <n> connections to peers (default: 125)") + "\n" +
         "  -addnode=<ip>          " + _("Add a node to connect to and attempt to keep the connection open") + "\n" +
         "  -connect=<ip>          " + _("Connect only to the specified node(s)") + "\n" +
@@ -248,7 +247,13 @@ std::string HelpMessage()
         "  -bantime=<n>           " + _("Number of seconds to keep misbehaving peers from reconnecting (default: 86400)") + "\n" +
         "  -maxreceivebuffer=<n>  " + _("Maximum per-connection receive buffer, <n>*1000 bytes (default: 5000)") + "\n" +
         "  -maxsendbuffer=<n>     " + _("Maximum per-connection send buffer, <n>*1000 bytes (default: 1000)") + "\n" +
-
+#ifdef USE_UPNP
+#if USE_UPNP
+        "  -upnp                  " + _("Use UPnP to map the listening port (default: 1 when listening)") + "\n" +
+#else
+        "  -upnp                  " + _("Use UPnP to map the listening port (default: 0)") + "\n" +
+#endif
+#endif
         "  -detachdb              " + _("Detach block and address databases. Increases shutdown time (default: 0)") + "\n" +
         "  -paytxfee=<amt>        " + _("Fee per KB to add to transactions you send") + "\n" +
         "  -mininput=<amt>        " + _("When creating transactions, ignore inputs with value less than this (default: 0.0001)") + "\n" +
@@ -268,7 +273,7 @@ std::string HelpMessage()
 #endif
         "  -rpcuser=<user>        " + _("Username for JSON-RPC connections") + "\n" +
         "  -rpcpassword=<pw>      " + _("Password for JSON-RPC connections") + "\n" +
-        "  -rpcport=<port>        " + _("Listen for JSON-RPC connections on <port> (default: 558832)") + "\n" +
+        "  -rpcport=<port>        " + _("Listen for JSON-RPC connections on <port> (default: 19335)") + "\n" +
         "  -rpcallowip=<ip>       " + _("Allow JSON-RPC connections from specified IP address") + "\n" +
         "  -rpcconnect=<ip>       " + _("Send commands to node running on <ip> (default: 127.0.0.1)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
@@ -290,7 +295,7 @@ std::string HelpMessage()
     return strUsage;
 }
 
-/** Initialize YodaCoin.
+/** Initialize PlatinumCoin.
  *  @pre Parameters should be parsed and config file should be read.
  */
 bool AppInit2()
@@ -328,7 +333,7 @@ bool AppInit2()
     // ********************************************************* Step 2: parameter interactions
 
     fTestNet = GetBoolArg("-testnet");
-    // Keep irc seeding on by default for now.
+    // PlatinumCoin: Keep irc seeding on by default for now.
 //    if (fTestNet)
 //    {
         SoftSetBoolArg("-irc", true);
@@ -421,15 +426,21 @@ bool AppInit2()
             return InitError(strprintf(_("Invalid amount for -mininput=<amount>: '%s'"), mapArgs["-mininput"].c_str()));
     }
 
+    if (mapArgs.count("-checkpointkey")) // ppcoin: checkpoint master priv key
+    {
+        if (!SetCheckpointPrivKey(GetArg("-checkpointkey", "")))
+            return InitError(_("Unable to sign checkpoint, wrong checkpointkey?"));
+    }
+
     // ********************************************************* Step 4: application initialization: dir lock, daemonize, pidfile, debug log
 
-    // Make sure only a single YodaCoin process is using the data directory.
+    // Make sure only a single PlatinumCoin process is using the data directory.
     boost::filesystem::path pathLockFile = GetDataDir() / ".lock";
     FILE* file = fopen(pathLockFile.string().c_str(), "a"); // empty lock file; created if it doesn't exist.
     if (file) fclose(file);
     static boost::interprocess::file_lock lock(pathLockFile.string().c_str());
     if (!lock.try_lock())
-        return InitError(strprintf(_("Cannot obtain a lock on data directory %s.  YodaCoin is probably already running."), GetDataDir().string().c_str()));
+        return InitError(strprintf(_("Cannot obtain a lock on data directory %s.  PlatinumCoin is probably already running."), GetDataDir().string().c_str()));
 
 #if !defined(WIN32) && !defined(QT_GUI)
     if (fDaemon)
@@ -456,14 +467,14 @@ bool AppInit2()
     if (!fDebug)
         ShrinkDebugFile();
     printf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
-    printf("YodaCoin version %s (%s)\n", FormatFullVersion().c_str(), CLIENT_DATE.c_str());
+    printf("PlatinumCoin version %s (%s)\n", FormatFullVersion().c_str(), CLIENT_DATE.c_str());
     printf("Startup time: %s\n", DateTimeStrFormat("%x %H:%M:%S", GetTime()).c_str());
     printf("Default data directory %s\n", GetDefaultDataDir().string().c_str());
     printf("Used data directory %s\n", GetDataDir().string().c_str());
     std::ostringstream strErrors;
 
     if (fDaemon)
-        fprintf(stdout, "YodaCoin server starting\n");
+        fprintf(stdout, "PlatinumCoin server starting\n");
 
     int64 nStart;
 
@@ -525,7 +536,9 @@ bool AppInit2()
     fNoListen = !GetBoolArg("-listen", true);
     fDiscover = GetBoolArg("-discover", true);
     fNameLookup = GetBoolArg("-dns", true);
-
+#ifdef USE_UPNP
+    fUseUPnP = GetBoolArg("-upnp", USE_UPNP);
+#endif
 
     bool fBound = false;
     if (!fNoListen)
@@ -582,7 +595,7 @@ bool AppInit2()
         strErrors << _("Error loading blkindex.dat") << "\n";
 
     // as LoadBlockIndex can take several minutes, it's possible the user
-    // requested to kill YodaCoin-qt during the last operation. If so, exit.
+    // requested to kill PlatinumCoin-qt during the last operation. If so, exit.
     // As the program has not fully started yet, Shutdown() is possibly overkill.
     if (fRequestShutdown)
     {
@@ -620,32 +633,6 @@ bool AppInit2()
         return false;
     }
 
-    if (mapArgs.count("-exportStatData"))
-    {
-        FILE* file = fopen((GetDataDir() / "blockstat.dat").string().c_str(), "w");
-        if (!file)
-           return false;
-        
-        for (map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.begin(); mi != mapBlockIndex.end(); ++mi)
-        {
-            CBlockIndex* pindex = (*mi).second;
-            CBlock block;
-            block.ReadFromDisk(pindex);
-            block.BuildMerkleTree();
-            fprintf(file, "%d,%s,%s,%d,%f,%u\n",
-                pindex->nHeight, /* todo: height */
-                block.GetHash().ToString().c_str(),
-                block.GetPoWHash().ToString().c_str(),
-                block.nVersion,
-                //CBigNum().SetCompact(block.nBits).getuint256().ToString().c_str(),
-                GetDifficulty(pindex),
-                block.nTime
-            );
-        }
-        fclose(file);
-        return false;
-    }
-
     // ********************************************************* Step 7: load wallet
 
     uiInterface.InitMessage(_("Loading wallet..."));
@@ -659,10 +646,10 @@ bool AppInit2()
         if (nLoadWalletRet == DB_CORRUPT)
             strErrors << _("Error loading wallet.dat: Wallet corrupted") << "\n";
         else if (nLoadWalletRet == DB_TOO_NEW)
-            strErrors << _("Error loading wallet.dat: Wallet requires newer version of YodaCoin") << "\n";
+            strErrors << _("Error loading wallet.dat: Wallet requires newer version of PlatinumCoin") << "\n";
         else if (nLoadWalletRet == DB_NEED_REWRITE)
         {
-            strErrors << _("Wallet needed to be rewritten: restart YodaCoin to complete") << "\n";
+            strErrors << _("Wallet needed to be rewritten: restart PlatinumCoin to complete") << "\n";
             printf("%s", strErrors.str().c_str());
             return InitError(strErrors.str());
         }

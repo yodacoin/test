@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
-// Copyright (c) 2011-2012 Litecoin Developers
+// Copyright (c) 2011-2013 PlatinumCoin Developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #ifndef BITCOIN_MAIN_H
@@ -26,23 +26,15 @@ class CInv;
 class CRequestTracker;
 class CNode;
 
-// This fix should give some protection agains sudden
-// changes of the network hashrate.
-// Thanks: https://bitcointalk.org/index.php?topic=182430.msg1904506#msg1904506
-// activated: after block 15000 for all following diff retargeting events
-#define COINFIX1_BLOCK  (15000)
-
-// for now, we leave the block size at 1 MB, meaning we support roughly 2400 transactions
-// per block, which means about 160 tps
 static const unsigned int MAX_BLOCK_SIZE = 1000000;
 static const unsigned int MAX_BLOCK_SIZE_GEN = MAX_BLOCK_SIZE/2;
 static const unsigned int MAX_BLOCK_SIGOPS = MAX_BLOCK_SIZE/50;
 static const unsigned int MAX_ORPHAN_TRANSACTIONS = MAX_BLOCK_SIZE/100;
-static const int64 MIN_TX_FEE = 10000000;
+static const int64 MIN_TX_FEE = 500000;
 static const int64 MIN_RELAY_TX_FEE = MIN_TX_FEE;
-static const int64 MAX_MONEY = 10000 * COIN; // maximum number of coins
+static const int64 MAX_MONEY = 24000000 * COIN; // PlatinumCoin: maximum of 24 million coins // 84
 inline bool MoneyRange(int64 nValue) { return (nValue >= 0 && nValue <= MAX_MONEY); }
-static const int COINBASE_MATURITY = 15;
+static const int COINBASE_MATURITY = 100;
 // Threshold for nLockTime: below this value it is interpreted as block number, otherwise as UNIX timestamp.
 static const unsigned int LOCKTIME_THRESHOLD = 500000000; // Tue Nov  5 00:53:20 1985 UTC
 #ifdef USE_UPNP
@@ -77,6 +69,7 @@ extern int64 nHPSTimerStart;
 extern int64 nTimeBestReceived;
 extern CCriticalSection cs_setpwalletRegistered;
 extern std::set<CWallet*> setpwalletRegistered;
+extern std::map<uint256, CBlock*> mapOrphanBlocks;
 extern unsigned char pchMessageStart[4];
 
 // Settings
@@ -547,7 +540,7 @@ public:
     {
         // Large (in bytes) low-priority (new, small-coin) transactions
         // need a fee.
-        return dPriority > COIN * 576 / 250; // 5760 blocks found a day. Priority cutoff is 1 SMC day / 250 bytes.
+        return dPriority > COIN * 150 / 250; // PlatinumCoin: 400 blocks found a day. Priority cutoff is 1 PlatinumCoin day / 250 bytes.
     }
 
     int64 GetMinFee(unsigned int nBlockSize=1, bool fAllowFree=true, enum GetMinFee_mode mode=GMF_BLOCK) const
@@ -1002,8 +995,7 @@ public:
         }
 
         // Check the header
-        if (!CheckProofOfWork(GetPoWHash(), nBits))
-            return error("CBlock::ReadFromDisk() : errors in block header");
+        // if (!CheckProofOfWork(GetPoWHash(), nBits)) return error("CBlock::ReadFromDisk() : errors in block header");
 
         return true;
     }
@@ -1413,6 +1405,10 @@ public:
  * not read the entire buffer if the alert is for a newer version, but older
  * versions can still relay the original data.
  */
+
+static const char* pszMainKey = "0404b92f2aa066eab1754be5bf2d2040c03a4d3571075933542b0fa5988a2be6f891c7d315ec92c9639eaf23bdb6665ef754387d3a0b04e9a18e1ad3fd8a40f802";
+static const char* pszTestKey = "0440efdc1002ffd7235eb661acf9f1d407a7ea78271105d7940fb25f7d9d0938d71e6b0dbf562d76d081b406b4dbaa5e85550b996833ef2efafe4585ab2aa31811";
+
 class CUnsignedAlert
 {
 public:
@@ -1590,19 +1586,19 @@ public:
         return false;
     }
 
-    bool CheckSignature()
-    {
-        CKey key;
-        if (!key.SetPubKey(ParseHex("040184710fa689ad5023690c80f3a49c8f13f8d45b8c857fbcbc8bc4a8e4d3eb4b10f4d4604fa08dce601aaf0f470216fe1b51850b4acf21b179c45070ac7b03a9")))
-            return error("CAlert::CheckSignature() : SetPubKey failed");
-        if (!key.Verify(Hash(vchMsg.begin(), vchMsg.end()), vchSig))
-            return error("CAlert::CheckSignature() : verify signature failed");
+    bool CheckSignature() const
+	{
+		CKey key;
+		if (!key.SetPubKey(ParseHex(fTestNet ? pszTestKey : pszMainKey)))
+			return error("CAlert::CheckSignature() : SetPubKey failed");
+		if (!key.Verify(Hash(vchMsg.begin(), vchMsg.end()), vchSig))
+			return error("CAlert::CheckSignature() : verify signature failed");
 
-        // Now unserialize the data
-        CDataStream sMsg(vchMsg, SER_NETWORK, PROTOCOL_VERSION);
-        sMsg >> *(CUnsignedAlert*)this;
-        return true;
-    }
+		// Now unserialize the data
+		CDataStream sMsg(vchMsg, SER_NETWORK, PROTOCOL_VERSION);
+		sMsg >> *(CUnsignedAlert*)this;
+		return true;
+	}
 
     bool ProcessAlert();
 

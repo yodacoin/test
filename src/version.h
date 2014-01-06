@@ -1,5 +1,7 @@
 // Copyright (c) 2012 The Bitcoin developers
 // Copyright (c) 2012 Litecoin Developers
+// Copyright (c) 2013 PlatinumCoin Developers
+// Copyright (c) 2013 PlatinumCoin Developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #ifndef BITCOIN_VERSION_H
@@ -12,10 +14,10 @@
 //
 
 // These need to be macro's, as version.cpp's voodoo requires it
-#define CLIENT_VERSION_MAJOR       1
-#define CLIENT_VERSION_MINOR       0
-#define CLIENT_VERSION_REVISION    0
-#define CLIENT_VERSION_BUILD       0
+#define CLIENT_VERSION_MAJOR       0
+#define CLIENT_VERSION_MINOR       6
+#define CLIENT_VERSION_REVISION    4
+#define CLIENT_VERSION_BUILD       4
 
 static const int CLIENT_VERSION =
                            1000000 * CLIENT_VERSION_MAJOR
@@ -31,7 +33,7 @@ extern const std::string CLIENT_DATE;
 // network protocol versioning
 //
 
-static const int PROTOCOL_VERSION = 60001;
+static const int PROTOCOL_VERSION = 60002;
 
 // earlier versions not supported as of Feb 2012, and are disconnected
 static const int MIN_PROTO_VERSION = 209;

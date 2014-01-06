@@ -1,5 +1,7 @@
 // Copyright (c) 2012 The Bitcoin developers
 // Copyright (c) 2012 Litecoin Developers
+// Copyright (c) 2013 PlatinumCoin Developers
+// Copyright (c) 2013 PlatinumCoin Developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <string>
@@ -12,7 +14,7 @@
 const std::string CLIENT_NAME("Satoshi");
 
 // Client version number
-#define CLIENT_VERSION_SUFFIX   "-geo"
+#define CLIENT_VERSION_SUFFIX ""
 
 
 // The following part of the code determines the CLIENT_BUILD variable.
@@ -35,10 +37,9 @@ const std::string CLIENT_NAME("Satoshi");
 #endif
 
 // git will put "#define GIT_ARCHIVE 1" on the next line inside archives. 
-#define GIT_ARCHIVE 1
 #ifdef GIT_ARCHIVE
-#    define GIT_COMMIT_ID "a9113b5"
-#    define GIT_COMMIT_DATE "$Format:%cD"
+#    define GIT_COMMIT_ID ""
+#    define GIT_COMMIT_DATE ""
 #endif
 
 #define STRINGIFY(s) #s
@@ -47,7 +48,7 @@ const std::string CLIENT_NAME("Satoshi");
     "v" STRINGIFY(maj) "." STRINGIFY(min) "." STRINGIFY(rev) "." STRINGIFY(build) "-g" commit
 
 #define BUILD_DESC_FROM_UNKNOWN(maj,min,rev,build) \
-    "v" STRINGIFY(maj) "." STRINGIFY(min) "." STRINGIFY(rev) "." STRINGIFY(build) "-unk"
+    "v" STRINGIFY(maj) "." STRINGIFY(min) "." STRINGIFY(rev) "." STRINGIFY(build)
 
 #ifndef BUILD_DESC
 #    ifdef GIT_COMMIT_ID
